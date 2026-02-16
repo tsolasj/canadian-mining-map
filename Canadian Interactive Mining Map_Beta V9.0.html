@@ -1,0 +1,2142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canadian Interactive Mining Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e1117;
+    --panel: #161b22;
+    --panel-border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #E8443A;
+    --accent-glow: rgba(232,68,58,0.25);
+    --accent-light: #FF6B6B;
+    --canadian-red: #E8443A;
+    --canadian-white: #FFFFFF;
+    --iron: #c9510c;
+    --base: #3fb950;
+    --precious: #f5c542;
+    --uranium: #58a6ff;
+    --other: #bc8cff;
+    --mixed: #ff7b72;
+    --critical: #00d4aa;
+    --exploration: #e040fb;
+    --metallurgical: #ff6b9d;
+    --processing: #ffd54f;
+    --nonmetal: #228B22;
+    --oilsands: #1a1a1a;
+    --coal: #4a4a4a;
+    --radius: 6px;
+    --font-body: 'Instrument Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  html, body { height: 100%; font-family: var(--font-body); background: var(--bg); color: var(--text); }
+
+  #app {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ─── Sidebar ─── */
+  #sidebar {
+    width: 340px;
+    min-width: 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+    transition: margin-left 0.3s ease;
+    box-shadow: inset 3px 0 0 var(--canadian-red);
+  }
+  #sidebar.collapsed { margin-left: -340px; }
+
+  .sidebar-header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--panel-border);
+    position: relative;
+    background: linear-gradient(135deg, rgba(232,68,58,0.08) 0%, transparent 60%);
+  }
+  .sidebar-header .canada-flag-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--canadian-red) 0%, var(--canadian-red) 33%, var(--canadian-white) 33%, var(--canadian-white) 67%, var(--canadian-red) 67%, var(--canadian-red) 100%);
+  }
+  .sidebar-header h1 {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-header h1 .maple-leaf {
+    font-size: 18px;
+    filter: drop-shadow(0 0 4px rgba(232,68,58,0.5));
+  }
+  .sidebar-header p {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--accent-glow);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 8px;
+    border: 1px solid rgba(232,68,58,0.3);
+  }
+
+  /* ─── Search ─── */
+  .search-wrap {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .search-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 9px 12px 9px 36px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: var(--font-body);
+    outline: none;
+    transition: border-color 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%238b949e' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.44 1.32a5.5 5.5 0 1 1 0-7.78 5.5 5.5 0 0 1 0 7.78z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 10px center;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-dim); }
+
+  /* ─── Filters ─── */
+  .filters-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 20px 20px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--panel-border) transparent;
+  }
+  .filter-group {
+    margin-top: 16px;
+  }
+  .filter-group-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+  .filter-group-title .toggle-arrow {
+    transition: transform 0.2s;
+    font-size: 8px;
+  }
+  .filter-group-title.collapsed .toggle-arrow { transform: rotate(-90deg); }
+  .filter-options { display: flex; flex-direction: column; gap: 3px; }
+  .filter-options.collapsed { display: none; }
+
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-body);
+    transition: background 0.15s, color 0.15s;
+  }
+  .filter-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .filter-btn.active { background: rgba(255,255,255,0.08); color: var(--text); }
+  .filter-btn .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 2px solid var(--text-dim);
+    transition: all 0.15s;
+  }
+  .filter-btn.active .dot {
+    border-color: transparent;
+  }
+  .filter-btn .count {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.6;
+  }
+  .filter-btn.dimmed {
+    opacity: 0.35;
+    pointer-events: auto;
+  }
+  .filter-btn.dimmed .count {
+    color: #e53935;
+    opacity: 1;
+  }
+  .facility-cb.dimmed {
+    opacity: 0.35;
+  }
+
+  .select-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .select-controls button {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+  }
+  .select-controls button:hover { opacity: 1; }
+
+  /* ─── Results Footer ─── */
+  .sidebar-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--panel-border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .sidebar-footer .vis-count { color: var(--accent); font-weight: 500; }
+
+  .sidebar-disclaimer {
+    padding: 10px 20px;
+    border-top: 1px solid var(--panel-border);
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.15);
+  }
+  .sidebar-disclaimer a {
+    color: var(--accent-light);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .sidebar-disclaimer a:hover {
+    text-decoration: underline;
+  }
+
+  /* ─── Toggle Button ─── */
+  #sidebar-toggle {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 1001;
+    width: 36px;
+    height: 36px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: background 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #sidebar-toggle:hover { background: var(--accent-glow); border-color: var(--canadian-red); }
+
+  /* ─── Map ─── */
+  #map-container { flex: 1; position: relative; }
+  #map { height: 100%; width: 100%; background: #0d1117; }
+
+  /* Canadian branding watermark */
+  .canada-watermark {
+    position: absolute;
+    bottom: 36px;
+    left: 14px;
+    z-index: 999;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: rgba(232,68,58,0.5);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .canada-watermark .wm-leaf { font-size: 14px; }
+
+  /* Leaflet overrides */
+  .leaflet-control-zoom a {
+    background: var(--panel) !important;
+    color: var(--text) !important;
+    border-color: var(--panel-border) !important;
+  }
+  .leaflet-control-zoom a:hover { background: var(--accent-glow) !important; }
+  .leaflet-control-attribution {
+    background: rgba(14,17,23,0.85) !important;
+    color: var(--text-dim) !important;
+    font-size: 10px !important;
+  }
+  .leaflet-control-attribution a { color: var(--accent) !important; }
+
+  /* ─── Custom Markers ─── */
+  .mine-marker {
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 0 8px rgba(0,0,0,0.5), 0 0 20px var(--glow);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+  }
+  .mine-marker:hover {
+    transform: scale(1.35);
+    box-shadow: 0 0 14px rgba(0,0,0,0.5), 0 0 30px var(--glow);
+    z-index: 9999 !important;
+  }
+
+  /* Critical Minerals diamond marker */
+  .cm-marker {
+    width: 12px;
+    height: 12px;
+    background: var(--glow);
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 0 8px rgba(0,0,0,0.5), 0 0 20px var(--glow);
+    transform: rotate(45deg);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .cm-marker:hover {
+    transform: rotate(45deg) scale(1.35);
+    box-shadow: 0 0 14px rgba(0,0,0,0.5), 0 0 30px var(--glow);
+    z-index: 9999 !important;
+  }
+
+  /* Exploration project triangle marker */
+  .explor-marker {
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-bottom: 12px solid var(--glow);
+    filter: drop-shadow(0 0 4px var(--glow)) drop-shadow(0 0 8px rgba(0,0,0,0.5));
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .explor-marker:hover {
+    transform: scale(1.35);
+    filter: drop-shadow(0 0 8px var(--glow)) drop-shadow(0 0 14px rgba(0,0,0,0.5));
+    z-index: 9999 !important;
+  }
+
+  /* Metallurgical Works square marker */
+  .met-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 0 8px rgba(0,0,0,0.5), 0 0 20px var(--glow);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .met-marker:hover {
+    transform: scale(1.35);
+    box-shadow: 0 0 14px rgba(0,0,0,0.5), 0 0 30px var(--glow);
+    z-index: 9999 !important;
+  }
+
+  /* Processing Facilities hexagon marker */
+  .proc-marker {
+    width: 14px;
+    height: 14px;
+    background: var(--glow);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    filter: drop-shadow(0 0 4px var(--glow)) drop-shadow(0 0 8px rgba(0,0,0,0.5));
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .proc-marker:hover {
+    transform: scale(1.35);
+    filter: drop-shadow(0 0 8px var(--glow)) drop-shadow(0 0 14px rgba(0,0,0,0.5));
+    z-index: 9999 !important;
+  }
+
+  /* Non-Metal Mines pentagon marker */
+  .nm-marker {
+    width: 14px;
+    height: 14px;
+    background: var(--glow);
+    clip-path: polygon(50% 0%, 100% 38%, 81% 100%, 19% 100%, 0% 38%);
+    filter: drop-shadow(0 0 4px var(--glow)) drop-shadow(0 0 8px rgba(0,0,0,0.5));
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .nm-marker:hover {
+    transform: scale(1.35);
+    filter: drop-shadow(0 0 8px var(--glow)) drop-shadow(0 0 14px rgba(0,0,0,0.5));
+    z-index: 9999 !important;
+  }
+
+  .oil-marker {
+    width: 16px;
+    height: 16px;
+    background: #1a1a1a;
+    border: 2px solid var(--glow);
+    border-radius: 3px;
+    filter: drop-shadow(0 0 4px var(--glow)) drop-shadow(0 0 8px rgba(0,0,0,0.5));
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .oil-marker:hover {
+    transform: scale(1.35);
+    filter: drop-shadow(0 0 8px var(--glow)) drop-shadow(0 0 14px rgba(0,0,0,0.5));
+    z-index: 9999 !important;
+  }
+
+  /* ─── Popup ─── */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel) !important;
+    border: 1px solid var(--panel-border) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    color: var(--text) !important;
+  }
+  .leaflet-popup-tip { background: var(--panel) !important; border: 1px solid var(--panel-border) !important; }
+  .leaflet-popup-close-button { color: var(--text-dim) !important; font-size: 18px !important; }
+  .leaflet-popup-close-button:hover { color: var(--accent) !important; }
+
+  .popup-inner { min-width: 260px; }
+  .popup-inner .pop-name {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .popup-inner .pop-operator {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .popup-inner .pop-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+  }
+  .popup-inner .pop-label { color: var(--text-dim); }
+  .popup-inner .pop-value { color: var(--text); font-weight: 500; text-align: right; max-width: 170px; }
+  .popup-inner .pop-product-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin: 2px 2px 0 0;
+    font-weight: 500;
+  }
+  .popup-inner .pop-coords {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* ─── Legend ─── */
+  .legend-control {
+    background: var(--panel) !important;
+    border: 1px solid var(--panel-border) !important;
+    border-top: 3px solid var(--canadian-red) !important;
+    border-radius: 8px !important;
+    padding: 0;
+    color: var(--text);
+    font-family: var(--font-body);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    overflow: hidden;
+    max-width: 220px;
+  }
+  .legend-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+  }
+  .legend-header:hover { background: rgba(255,255,255,0.03); }
+  .legend-control.expanded .legend-header {
+    border-bottom-color: var(--panel-border);
+  }
+  .legend-header h4 {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0;
+  }
+  .legend-toggle {
+    font-size: 9px;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+  }
+  .legend-control:not(.expanded) .legend-toggle {
+    transform: rotate(-90deg);
+  }
+  .legend-body {
+    padding: 0 14px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+  }
+  .legend-control.expanded .legend-body {
+    max-height: 45vh;
+    padding: 8px 14px 12px;
+    overflow-y: auto;
+  }
+  .legend-body::-webkit-scrollbar {
+    width: 5px;
+  }
+  .legend-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .legend-body::-webkit-scrollbar-thumb {
+    background: var(--panel-border);
+    border-radius: 4px;
+  }
+  .legend-body::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dim);
+  }
+  .legend-separator {
+    height: 1px;
+    background: var(--panel-border);
+    margin: 6px 0;
+  }
+  .legend-section-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    opacity: 0.6;
+    margin: 6px 0 4px;
+  }
+  .legend-control h4 {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: var(--text-dim);
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.6);
+    flex-shrink: 0;
+  }
+  .legend-dot.diamond {
+    border-radius: 2px;
+    transform: rotate(45deg);
+    width: 10px;
+    height: 10px;
+  }
+  .legend-dot.triangle {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 10px solid;
+    border-radius: 0;
+    background: none !important;
+  }
+  .legend-dot.square {
+    border-radius: 2px;
+    width: 12px;
+    height: 12px;
+  }
+  .legend-dot.hexagon {
+    width: 12px;
+    height: 12px;
+    border-radius: 0;
+    border: none;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .legend-dot.pentagon {
+    width: 12px;
+    height: 12px;
+    border-radius: 0;
+    border: none;
+    clip-path: polygon(50% 0%, 100% 38%, 81% 100%, 19% 100%, 0% 38%);
+  }
+
+  /* ─── Facility Type Checkboxes ─── */
+  .facility-cb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: background 0.15s, color 0.15s;
+  }
+  .facility-cb:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .facility-cb input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--text-dim);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .facility-cb input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .facility-cb input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 0px;
+    width: 4px;
+    height: 8px;
+    border: solid var(--bg);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 768px) {
+    #sidebar { width: 300px; min-width: 300px; position: absolute; height: 100%; z-index: 1002; }
+    #sidebar.collapsed { margin-left: -300px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="canada-flag-bar"></div>
+      <h1><span class="maple-leaf">🍁</span> Canadian Interactive Mining Map</h1>
+      <p>This is an interactive Leaflet-based map of Canadian mining operations that plots mines across the country with color-coded markers by commodity type (metals, critical minerals, coal, oil sands, etc.). It features a sidebar with search, filtering by status/province/product group, and detailed popups for each mine — essentially a visual directory of Canada's mining landscape.</p>
+      <span class="badge" id="crs-badge">EPSG:4326 · WGS 84</span>
+    </div>
+
+    <div class="search-wrap">
+      <input type="text" class="search-input" id="search" placeholder="Search mine, operator, province… / Rechercher…" autocomplete="off">
+    </div>
+
+    <div class="filters-scroll">
+      <!-- Dataset Filter -->
+      <div class="filter-group" id="fg-dataset">
+        <div class="filter-group-title" onclick="toggleGroup('dataset')">
+          Dataset <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="select-controls" id="sc-dataset">
+          <button onclick="selectAll('dataset')">All</button>
+          <button onclick="selectNone('dataset')">None</button>
+        </div>
+        <div class="filter-options" id="fo-dataset"></div>
+      </div>
+
+      <!-- Status Filter (Critical Minerals) -->
+      <div class="filter-group" id="fg-status">
+        <div class="filter-group-title" onclick="toggleGroup('status')">
+          Activity Status <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="select-controls" id="sc-status">
+          <button onclick="selectAll('status')">All</button>
+          <button onclick="selectNone('status')">None</button>
+        </div>
+        <div class="filter-options" id="fo-status"></div>
+      </div>
+
+      <!-- Province Filter -->
+      <div class="filter-group" id="fg-province">
+        <div class="filter-group-title" onclick="toggleGroup('province')">
+          Province / Territory <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="select-controls" id="sc-province">
+          <button onclick="selectAll('province')">All</button>
+          <button onclick="selectNone('province')">None</button>
+        </div>
+        <div class="filter-options" id="fo-province"></div>
+      </div>
+
+      <!-- Product Group Filter -->
+      <div class="filter-group" id="fg-product">
+        <div class="filter-group-title" onclick="toggleGroup('product')">
+          Product Group <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="select-controls" id="sc-product">
+          <button onclick="selectAll('product')">All</button>
+          <button onclick="selectNone('product')">None</button>
+        </div>
+        <div class="filter-options" id="fo-product"></div>
+      </div>
+
+      <!-- Facility Type Filter -->
+      <div class="filter-group" id="fg-facility">
+        <div class="filter-group-title" onclick="toggleGroup('facility')">
+          Facility Type <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="select-controls" id="sc-facility">
+          <button onclick="selectAll('facility')">All</button>
+          <button onclick="selectNone('facility')">None</button>
+        </div>
+        <div class="filter-options" id="fo-facility"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <span>🍁 Showing <span class="vis-count" id="vis-count">0</span> of <span id="total-count">0</span></span>
+      <button onclick="resetFilters()" style="background:none;border:none;color:var(--accent);font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:0.5px;">RESET</button>
+    </div>
+
+    <div class="sidebar-disclaimer">
+      📋 Data sourced from <a href="https://open.canada.ca/data/en/dataset/000183ed-8864-42f0-ae43-c4313a860720" target="_blank" rel="noopener noreferrer">Open Canada — Principal Mineral Areas, Producing Mines, and Oil & Gas Fields</a>
+    </div>
+  </aside>
+
+  <div id="map-container">
+    <button id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+    <div class="canada-watermark"><span class="wm-leaf">🍁</span> Natural Resources Canada · Ressources naturelles Canada</div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script>
+// ─── DATA ───
+const RAW_CSV = `Operation Group,Province / Territory,Operation,Operator / Owners,Facility,City,Product Group,Product,Latitude,Longitude,Unique identifier
+Metal mines,Newfoundland and Labrador,Voisey’s Bay,Vale Newfoundland and Labrador Limited,"Open-pit, underground, concentrator",Voisey’s Bay,Base metals,"Nickel, copper, cobalt",56.331659,-62.090855,1
+Metal mines,Newfoundland and Labrador,Scully,Tacora Resources Inc.,"Open-pit, concentrator",Wabush,Iron ore,Iron,52.907129,-66.912573,2
+Metal mines,Newfoundland and Labrador,Carol Lake,Iron Ore Company of Canada Inc.,"Open-pit, concentrator",Labrador City,Iron ore,Iron,53.039755,-66.936774,3
+Metal mines,Newfoundland and Labrador,DSO (3 and 4),Tata Steel Minerals Canada Limited,Open-pit,Menihek,Iron ore,Iron,54.890828,-67.081916,4
+Metal mines,Quebec,Lac Tio,Rio Tinto Group,Open-pit,Havre-Saint-Pierre,Other metals,Ilmenite,50.5541,-63.416,17
+Metal mines,Quebec,Bloom Lake,Champion Iron Ltd.,"Open-pit, concentrator",Fermont,Iron ore,Iron,52.84,-67.28,18
+Metal mines,Quebec,Mont-Wright,ArcelorMittal,"Open-pit, concentrator",Fermont,Iron ore,Iron,52.757053,-67.330058,19
+Metal mines,Quebec,DSO (Goodwood),Tata Steel Minerals Canada Limited,Open-pit,Schefferville,Iron ore,Iron,55.09939,-67.34778,20
+Metal mines,Quebec,Fire Lake,ArcelorMittal,Open-pit,Fermont,Iron ore,Iron,52.352998,-67.363935,21
+Metal mines,Quebec,Niobec,Magris Performance Materials Inc.,"Underground, concentrator",Saint-Honoré-de-Chicoutimi,Other metals,Niobium,48.532148,-71.156929,22
+Metal mines,Quebec,Raglan,Glencore Canada Corporation,"Underground, concentrator",Katinniq,Base metals,"Nickel, platinum group metals, copper, cobalt, gold, silver",61.687171,-73.674669,23
+Metal mines,Quebec,Nunavik Nickel,Canadian Royalties Inc.,"Open-pit, underground, concentrator",Kangiqsujuaq,Base metals,"Nickel, copper, platinum group metals, cobalt",61.420856,-74.1375,24
+Metal mines,Quebec,Éléonore,Newmont Corporation,"Underground, concentrator",Opinaca Reservoir,Precious metals,Gold,52.69889,-76.08667,25
+Metal mines,Quebec,Lamaque,Eldorado Gold,"Underground, concentrator",Val-d’Or,Precious metals,Gold,48.079221,-77.739624,26
+Metal mines,Quebec,North American Lithium,Sayona Québec Inc.,"Open-pit, concentrator",La Corne,Other metals,Lithium,48.4115,-77.80934,27
+Metal mines,Quebec,Goldex,Agnico Eagle Mines Limited,"Underground, concentrator",Val-d’Or,Precious metals,"Gold, silver",48.0926,-77.8733,28
+Metal mines,Quebec,Kiena,Wesdome Gold Mines Ltd.,"Underground, concentrator",Val-d’Or,Precious metals,Gold,48.12,-77.91,29
+Metal mines,Quebec,Canadian Malartic,Agnico Eagle Mines Limited,"Open-pit, underground, concentrator",Malartic,Precious metals,"Gold, silver",48.122223,-78.130824,30
+Metal mines,Quebec,LaRonde,Agnico Eagle Mines Limited,"Underground, concentrator",Preissac,Precious metals,"Gold, zinc, copper, silver, cadmium",48.2516,-78.428,31
+Metal mines,Quebec,Westwood-Doyon,IAMGOLD Corporation,"Underground, concentrator",Cadillac,Precious metals,"Gold, silver",48.256,-78.502,32
+Metal mines,Quebec,Casa Berardi,Hecla Mining Company,"Open-pit, underground, concentrator","north of La Sarre, Casa Berardi Twp.",Precious metals,"Gold, silver",49.5719,-79.231307,33
+Metal mines,Ontario,Detour Lake,Agnico Eagle Mines Limited,"Open-pit, concentrator",northeast of Cochrane,Precious metals,Gold,50.018143,-79.717631,49
+Metal mines,Ontario,Macassa,Agnico Eagle Mines Limited,"Underground, concentrator",Kirkland Lake area,Precious metals,"Gold, silver",48.142528,-80.071637,50
+Metal mines,Ontario,Fox Complex,McEwen Mining Inc.,"Open-pit, underground, concentrator",Matheson,Precious metals,Gold,48.534362,-80.340814,51
+Metal mines,Ontario,Young-Davidson,Alamos Gold Inc.,"Underground, concentrator",Matachewan,Precious metals,Gold,47.94667,-80.67444,52
+Metal mines,Ontario,Nickel Rim South,Glencore Canada Corporation,Underground,Sudbury,Base metals,"Nickel, copper, cobalt, platinum group metals, gold",46.657982,-80.796793,53
+Metal mines,Ontario,Garson,Vale Canada Limited,Underground,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.568,-80.857,54
+Metal mines,Ontario,Clarabelle,Vale Canada Limited,Concentrator,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.495822,-81.056782,55
+Metal mines,Ontario,Copper Cliff Complex,Vale Canada Limited,Underground,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.491445,-81.068205,56
+Metal mines,Ontario,Hoyle Pond,Newmont Corporation,Underground,south of Porcupine,Precious metals,Gold,48.5519,-81.1083,57
+Metal mines,Ontario,Bell Creek,Pan American Silver Corp.,"Underground, concentrator",Timmins,Precious metals,Gold,48.553,-81.178,58
+Metal mines,Ontario,Creighton,Vale Canada Limited,Underground,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.474,-81.1861,59
+Metal mines,Ontario,Porcupine,Newmont Corporation,Concentrator,Timmins,Precious metals,Gold,48.463511,-81.242719,60
+Metal mines,Ontario,Hollinger,Newmont Corporation,Open-pit,Timmins,Precious metals,Gold,48.4733,-81.31314,61
+Metal mines,Ontario,Coleman,Vale Canada Limited,Underground,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.6771,-81.3397,62
+Metal mines,Ontario,Fraser,Glencore Canada Corporation,Underground,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, cobalt, silver",46.6633,-81.3404,63
+Metal mines,Ontario,Strathcona,Glencore Canada Corporation,Concentrator,Sudbury,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",46.6734,-81.3427,64
+Metal mines,Ontario,Kidd Creek,Glencore Canada Corporation,"Underground, concentrator",Timmins,Base metals,"Copper, zinc, silver, selenium, indium",48.6894,-81.37,65
+Metal mines,Ontario,McCreedy West,KGHM International Ltd.,Underground,Sudbury,Base metals and precious metals,"Copper, nickel, platinum group metals, gold, silver, cobalt",46.638059,-81.39894,66
+Metal mines,Ontario,Totten,Vale Canada Limited,Underground,Worthington,Base metals,"Nickel, copper, platinum group metals, gold, silver, cobalt",46.381174,-81.454839,67
+Metal mines,Ontario,Timmins West,Pan American Silver Corp.,Underground,Timmins,Precious metals,Gold,48.383275,-81.549826,68
+Metal mines,Ontario,Côté Gold,IAMGOLD Corporation,Open-pit,Gogama,Precious metals,Gold,47.54960828,-81.93619997,69
+Metal mines,Ontario,Borden,Newmont Corporation,"Open-pit, underground",Chapleau,Precious metals,Gold,47.871883,-83.260981,70
+Metal mines,Ontario,Island,Alamos Gold Inc.,"Underground, concentrator",Dubreuilville,Precious metals,Gold,48.285667,-84.449604,71
+Metal mines,Ontario,Magino,Alamos Gold Inc.,"Open-pit, concentrator",Timmins,Precious metals,"Gold, silver",48.28869,-84.45744,72
+Metal mines,Ontario,Eagle River,Wesdome Gold Mines Ltd.,"Underground, concentrator",Wawa,Precious metals,Gold,47.9861,-85.4619,73
+Metal mines,Ontario,Hemlo (Williams),Barrick Gold Corporation,"Open-pit, underground, concentrator",Marathon,Precious metals,Gold,48.695726,-85.91598,74
+Metal mines,Ontario,Lac des Iles,Impala Canada Ltd.,"Open-pit, underground, concentrator",Thunder Bay,Precious metals,"Platinum group metals, gold, nickel, copper, cobalt",49.1691,-89.6105,75
+Metal mines,Ontario,Musselwhite,Newmont Corporation,"Underground, concentrator",north of Pickle Lake,Precious metals,"Gold, silver",52.6127,-90.3636,76
+Metal mines,Ontario,Red Lake,Evolution Mining Ltd.,"Underground, concentrator",Balmertown,Precious metals,"Gold, silver",51.050557,-93.732922,77
+Metal mines,Ontario,Rainy River,New Gold Inc.,"Open-pit, underground, concentrator",Fort Frances,Precious metals,"Gold, silver",48.833,-94.012,78
+Metal mines,Ontario,Greenstone ,Equinox Gold,Open-pit,Geraldton,Precious metals,Gold,49.6935902,-86.95933549,101
+Metal mines,Manitoba,Tanco,Sinomine Resource Grp Co. Ltd.,"Underground, concentrator, plant",Lac-du-Bonnet,Base metals,"Cesium, lithium",50.4291,-95.4502,102
+Metal mines,Manitoba,Thompson (T-1 and T-3),Vale Canada Limited,"Open-pit, underground, concentrator",Thompson,Base metals,"Nickel, cobalt, copper, platinum group metals, gold, silver",55.7152,-97.8444,103
+Metal mines,Manitoba,Stall Lake,Hudbay Minerals Inc.,Concentrator,Snow Lake,Base metals and precious metals,"Gold, zinc",54.85692,-99.9451,104
+Metal mines,Manitoba,New Britannia,Hudbay Minerals Inc.,Concentrator,Snow Lake,Base metals and precious metals,"Gold, copper",54.886349,-100.024002,105
+Metal mines,Manitoba,Lalor Lake,Hudbay Minerals Inc.,Underground,Snow Lake,Base metals and precious metals,"Gold, zinc, copper, silver",54.86667,-100.13333,106
+Metal mines,Saskatchewan,Santoy,SSR Mining Inc.,Underground,Santoy Lake,Precious metals,Gold,55.66778,-103.414571,110
+Metal mines,Saskatchewan,Seabee,SSR Mining Inc.,Concentrator,Laonil Lake,Precious metals,Gold,55.683772,-103.622257,111
+Metal mines,Saskatchewan,McClean Lake,Orano Canada Inc.,Concentrator,McClean Lake,Uranium,Uranium,58.3472,-103.8361,112
+Metal mines,Saskatchewan,Cigar Lake,Cameco Corporation,Underground,Waterbury Lake,Uranium,Uranium,58.06819,-104.54123,113
+Metal mines,Saskatchewan,McArthur River,Cameco Corporation,Underground,north of Key Lake,Uranium,Uranium,57.7637,-105.053,114
+Metal mines,Saskatchewan,Key Lake,Cameco Corporation,Concentrator,north of Highrock Lake,Uranium,Uranium,57.207,-105.647,115
+Metal mines,British Columbia,Elk,Gold Mountain Mining Corp.,Open-pit,Peachland,Precious metals,Gold,49.8538,-120.31487,151
+Metal mines,British Columbia,New Afton,New Gold Inc.,"Underground, concentrator",Kamloops,Base metals and precious metals,"Gold, copper, silver",50.661,-120.514,152
+Metal mines,British Columbia,Copper Mountain,Hudbay Minerals Inc.,"Open-pit, concentrator",Princeton,Base metals,"Copper, gold, silver",49.331,-120.533,153
+Metal mines,British Columbia,Highland Valley,Teck Resources Limited,"Open-pit, concentrator",Logan Lake,Base metals,"Copper, silver, molybdenum",50.4855,-121.0483,154
+Metal mines,British Columbia,Mount Polley,Imperial Metals Corporation,"Open-pit, concentrator",northeast of Williams Lake,Base metals,"Gold, copper, silver",52.544959,-121.633931,155
+Metal mines,British Columbia,Gibraltar,Taseko Mines Limited,"Open-pit, concentrator",north of Williams Lake,Base metals,"Copper, molybdenum, silver",52.528495,-122.28716,156
+Metal mines,British Columbia,Mount Milligan,Centerra Gold Inc.,"Open-pit, concentrator",Fort St. James,Base metals and precious metals,"Copper, gold, silver",55.118,-124.031,157
+Metal mines,British Columbia,Red Chris,Newmont Corporation,"Open-pit, concentrator",Kinaskan Lake,Base metals,"Gold, copper, silver",57.7,-129.78333,158
+Metal mines,British Columbia,Brucejack,Newmont Corporation,"Underground, concentrator",Stewart,Precious metals,"Gold, silver",56.47554,-130.21783,159
+Metal mines,Yukon,Keno Hill Silver District,Hecla Mining Company,"Underground, concentrator",Mayo,Precious metals and Base metals,"Silver, zinc, lead  ",63.9167,-135.4833,176
+Metal mines,Yukon,Eagle (Dublin Gulch),Victoria Gold Corporation,"Open-pit, concentrator",Mayo,Precious metals,Gold,64.0322,-135.8456,177
+Metal mines,Nunavut,Mary River,Baffinland Iron Mines Corporation,Open-pit,Pond Inlet,Iron ore,Iron,71.340446,-78.556869,181
+Metal mines,Nunavut,Meliadine,Agnico Eagle Mines Limited,"Open-pit, underground, concentrator",Rankin Inlet,Precious metals,Gold,63.031529,-92.220206,182
+Metal mines,Nunavut,Meadowbank,Agnico Eagle Mines Limited,Concentrator,Baker Lake,Precious metals,Gold,65.0199956,-96.071313,183
+Metal mines,Nunavut,Amaruq,Agnico Eagle Mines Limited,"Open-pit, underground",Baker Lake,Precious metals,Gold,65.0216509,-96.07259326,184`;
+
+const RAW_CM_CSV = `Operation Group,Property Name,Operator Owners,Province/Territory,Commodities,Development Stage,Activity Status,Latitude,Longitude,Website,Unique identifier
+Mines and other primary producing sites,Beaver Brook,"China Minmetals Rare Earth Group Co., Ltd.",Newfoundland and Labrador,Antimony,Past producer,On hold / suspended,48.715909,-55.196,Not available/Pas disponible,8
+Mines and other primary producing sites,St. Lawrence Fluorspar,Canada Fluorspar Inc. / Fluorspar Holdings PTE Ltd.,Newfoundland and Labrador,Fluorspar,Past producer,On hold / suspended,46.9038,-55.4003,https://canadafluorspar.ca/,9
+Mines and other primary producing sites,Voisey's Bay,Vale S.A. ,Newfoundland and Labrador,"Nickel, copper, cobalt",Mine,Active,56.331659,-62.090855,https://vale.com,10
+Mines and other primary producing sites,Scotia,EDM Resources Inc.,Nova Scotia,"Zinc, lead, gypsum",Past producer,On hold / suspended,45.03248,-63.34479,https://www.edmresources.com,14
+Mines and other primary producing sites,Caribou,New Brunswick Government,New Brunswick,"Zinc, lead, silver, copper, gold",Past producer,On hold / suspended,47.56418,-66.29013,Not available/Pas disponible,23
+Mines and other primary producing sites,Lac Tio,Rio Tinto Group,Quebec,Ilmenite,Mine,Active,50.5541,-63.416,https://www.riotinto.com/,74
+Mines and other primary producing sites,Bloom Lake,Champion Iron Ltd.,Quebec,High-purity iron ore,Mine,Active,52.84,-67.28,https://www.championiron.com/,75
+Mines and other primary producing sites,Niobec,Magris Performance Materials Inc.,Quebec,Niobium,Mine,Active,48.532148,-71.156929,https://www.magrispm.com/,76
+Mines and other primary producing sites,Raglan,Glencore Canada Corporation,Quebec,"Nickel, platinum group metals, copper, cobalt, gold, silver",Mine,Active,61.687171,-73.674669,https://www.glencore.ca,77
+Mines and other primary producing sites,Nunavik Nickel,Canadian Royalties Inc.,Quebec,"Nickel, copper, platinum group metals, cobalt",Mine,Active,61.420856,-74.1375,https://www.canadianroyalties.com/,78
+Mines and other primary producing sites,Lac-des-Îles,Northern Graphite Corporation,Quebec,Graphite,Mine,Active,46.3753,-75.5357,http://northerngraphite.com,79
+Mines and other primary producing sites,Akasaba West (Goldex),Agnico Eagle Mines Limited,Quebec,"Gold, copper",Mine,Active,48.04,-77.58,https://www.agnicoeagle.com,80
+Mines and other primary producing sites,North American Lithium,Sayona Mining Ltd.,Quebec,Lithium,Mine,Active,48.4115,-77.80934,https://sayonamining.com.au/,81
+Mines and other primary producing sites,LaRonde,Agnico Eagle Mines Limited,Quebec,"Gold, zinc, copper, silver, cadmium",Mine,Active,48.2516,-78.428,https://www.agnicoeagle.com,82
+Mines and other primary producing sites,Nickel Rim South,Glencore Canada Corporation,Ontario,"Nickel, copper, cobalt, platinum group metals, gold",Past producer,On hold / suspended,46.657982,-80.796793,https://www.glencore.ca,135
+Mines and other primary producing sites,Garson,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",Mine,Active,46.568,-80.857,https://vale.com,136
+Mines and other primary producing sites,Copper Cliff Complex,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",Mine,Active,46.491445,-81.068205,https://vale.com,137
+Mines and other primary producing sites,Creighton,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",Mine,Active,46.474,-81.1861,https://vale.com,138
+Mines and other primary producing sites,Coleman,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",Mine,Active,46.6771,-81.3397,https://vale.com,139
+Mines and other primary producing sites,Fraser,Glencore Canada Corporation,Ontario,"Nickel, copper, platinum group metals, gold, cobalt, silver",Mine,Active,46.6633,-81.3404,https://www.glencore.ca,140
+Mines and other primary producing sites,Kidd Creek,Glencore Canada Corporation,Ontario,"Copper, zinc, silver, selenium, indium",Mine,Active,48.6894,-81.37,https://www.glencore.ca,141
+Mines and other primary producing sites,McCreedy West,KGHM Polska Miedź S.A.,Ontario,"Copper, nickel, platinum group metals, gold, silver, cobalt, tellurium",Mine,Active,46.638059,-81.39894,https://kghm.com/en,142
+Mines and other primary producing sites,Totten,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt",Mine,Active,46.381174,-81.454839,https://vale.com,143
+Mines and other primary producing sites,Lac des Iles,Impala Canada Ltd.,Ontario,"Platinum group metals, gold, nickel, copper, cobalt",Mine,Active,49.1691,-89.6105,https://impalacanada.com,144
+Mines and other primary producing sites,Tanco,Sinomine Resource Group Co. Ltd.,Manitoba,"Cesium, lithium (spodumene)",Mine,Active,50.4291,-95.4502,https://en.sinomine.cn/,164
+Mines and other primary producing sites,Thompson (T-1 and T-3),Vale S.A. ,Manitoba,"Nickel, cobalt, copper, platinum group metals, gold, silver",Mine,Active,55.7152,-97.8444,https://vale.com,165
+Mines and other primary producing sites,Bucko Lake,Canickel Mining Limited,Manitoba,"Nickel, copper",Past producer,On hold / suspended,54.8797,-98.6558,http://www.canickel.com,166
+Mines and other primary producing sites,Lalor Lake,Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Mine,Active,54.86667,-100.13333,https://hudbayminerals.com,167
+Mines and other primary producing sites,Rocanville,Nutrien Ltd.,Saskatchewan,Potash,Mine,Active,50.471916,-101.544281,https://www.nutrien.com,188
+Mines and other primary producing sites,Esterhazy (K-3),The Mosaic Company,Saskatchewan,"Potash, salt",Mine,Active,50.659914,-101.845218,https://mosaicincanada.com/,189
+Mines and other primary producing sites,Rabbit Lake,Cameco Corporation,Saskatchewan,Uranium,Past producer,On hold / suspended,58.19892,-103.71697,https://www.cameco.com/,190
+Mines and other primary producing sites,McClean Lake Mine,Orano Canada Inc. / Denison Mines Corp.,Saskatchewan,Uranium,Mine,Active,58.2577,-103.8691,https://denisonmines.com/,191
+Mines and other primary producing sites,Wynyard (Big Quill),Compass Minerals,Saskatchewan,Potash,Mine,Active,51.780628,-104.319916,https://www.compassminerals.com,192
+Mines and other primary producing sites,Cigar Lake,Cameco Corporation,Saskatchewan,Uranium,Mine,Active,58.06819,-104.54123,https://www.cameco.com/,193
+Mines and other primary producing sites,McArthur River,Cameco Corporation,Saskatchewan,Uranium,Mine,Active,57.7637,-105.053,https://www.cameco.com/,194
+Mines and other primary producing sites,Belle Plaine,The Mosaic Company,Saskatchewan,"Potash, salt",Mine,Active,50.435626,-105.181423,https://mosaicincanada.com/,195
+Mines and other primary producing sites,Lanigan,Nutrien Ltd.,Saskatchewan,Potash,Mine,Active,51.853044,-105.205794,https://www.nutrien.com,196
+Mines and other primary producing sites,Bethune,K+S Potash Canada,Saskatchewan,Potash,Mine,Active,50.62917,-105.26167,https://www.ks-potashcanada.com,197
+Mines and other primary producing sites,Colonsay,The Mosaic Company,Saskatchewan,Potash,Mine,Active,51.934163,-105.765382,https://mosaicincanada.com/,198
+Mines and other primary producing sites,Allan,Nutrien Ltd.,Saskatchewan,Potash,Mine,Active,51.93062,-106.068974,https://www.nutrien.com,199
+Mines and other primary producing sites,Patience Lake,Nutrien Ltd.,Saskatchewan,Potash,Mine,Active,52.089362,-106.376992,https://www.nutrien.com,200
+Mines and other primary producing sites,Cory,Nutrien Ltd.,Saskatchewan,Potash,Mine,Active,52.092027,-106.859358,https://www.nutrien.com,201
+Mines and other primary producing sites,Mankota,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.37296,-107.01266,https://nahelium.com/,202
+Mines and other primary producing sites,Vanscoy,Nutrien Ltd.,Saskatchewan,"Potash, salt",Mine,Active,52.01,-107.08,https://www.nutrien.com,203
+Mines and other primary producing sites,Cadillac,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.7702,-107.408,https://nahelium.com/,204
+Mines and other primary producing sites,Wilhelm,Canadian Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,50.41543,-107.86933,Not available/Pas disponible,205
+Mines and other primary producing sites,Antelope Lake,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,50.338096,-108.160656,https://nahelium.com/,206
+Mines and other primary producing sites,Eastend,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.46264,-108.91001,https://nahelium.com/,207
+Mines and other primary producing sites,Battle Creek S,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.16964,-109.40412,https://nahelium.com/,208
+Mines and other primary producing sites,Battle Creek-Cypress,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.4337,-109.429,https://nahelium.com/,209
+Mines and other primary producing sites,Battle Creek,North American Helium Inc.,Saskatchewan,Helium,Well(s) and/or plant,Active,49.25252,-109.52308,https://nahelium.com/,210
+Mines and other primary producing sites,Knappen,Thor Resources Inc.,Alberta,Helium,Well(s) and/or plant,Active,49.070095,-111.433613,https://www.thorres.com,218
+Mines and other primary producing sites,Steveville,Royal Helium Ltd. ,Alberta,Helium,Well(s) and/or plant,Active,50.7136,-111.860024,https://royalheliumltd.com,219
+Mines and other primary producing sites,Mount Brussilof,Baymag Inc.,British Columbia,"Magnesite (fused), magnesia (products)",Mine,Active,50.7887,-115.683,https://www.baymag.com/,255
+Mines and other primary producing sites,New Afton,New Gold Inc.,British Columbia,"Gold, copper, silver",Mine,Active,50.661,-120.514,https://newgold.com,256
+Mines and other primary producing sites,Copper Mountain,Hudbay Minerals Inc.,British Columbia,"Copper, gold, silver",Mine,Active,49.331,-120.533,https://hudbayminerals.com,257
+Mines and other primary producing sites,Highland Valley,Teck Resources Limited,British Columbia,"Copper, silver, molybdenum",Mine,Active,50.4855,-121.0483,https://www.teck.com/,258
+Mines and other primary producing sites,Mount Polley,Imperial Metals Corporation,British Columbia,"Gold, copper, silver",Mine,Active,52.544959,-121.633931,https://imperialmetals.com,259
+Mines and other primary producing sites,Gibraltar,Taseko Mines Limited,British Columbia,"Copper, molybdenum, silver",Mine,Active,52.528495,-122.28716,https://www.tasekomines.com,260
+Mines and other primary producing sites,Mount Milligan,Centerra Gold Inc.,British Columbia,"Copper, gold, silver",Mine,Active,55.118,-124.031,https://www.centerragold.com,261
+Mines and other primary producing sites,Endako,Centerra Gold Inc.,British Columbia,Molybdenum,Past producer,On hold / suspended,54.04417,-125.13278,https://www.centerragold.com,262
+Mines and other primary producing sites,Myra Falls,Trafigura Mining Group,British Columbia,"Zinc, copper, silver, gold, lead",Past producer,On hold / suspended,49.57,-125.59,https://www.trafigura.com,263
+Mines and other primary producing sites,Huckleberry,Imperial Metals Corporation,British Columbia,"Copper, molybdenum",Past producer,On hold / suspended,53.67972,-127.17333,https://imperialmetals.com,264
+Mines and other primary producing sites,Red Chris,Newmont Corporation,British Columbia,"Gold, copper, silver",Mine,Active,57.7,-129.78333,https://newmont.com/,265
+Mines and other primary producing sites,Keno Hill Silver District,Hecla Mining Company,Yukon,"Silver, zinc, lead",Mine,Active,63.9167,-135.4833,https://www.hecla.com/,279
+Mines and other primary producing sites,Cantung,Government of Canada,Northwest Territories,Tungsten,Past producer,On hold / suspended,61.96728,-128.22812,Not available/Pas disponible,285
+Mines and other primary producing sites,Mary River,Baffinland Iron Mines Corporation,Nunavut,High-purity iron ore,Mine,Active,71.340446,-78.556869,https://www.baffinland.com/,291
+Project,Port Hope Simpson (Deep Fox and Foxtrot),Search Minerals Inc.,Newfoundland and Labrador,Rare earth elements,Advanced project,Active,52.39833,-55.82417,https://searchminerals.ca/,1
+Project,Green Bay Copper-Gold (Ming),FireFly Metals Ltd.,Newfoundland and Labrador,"Copper, gold, silver",Past producer,Active,49.915,-56.087,https://fireflymetals.com.au/,2
+Project,Great Burnt,Benton Resources Inc.,Newfoundland and Labrador,"Copper, gold",Advanced project,Active,48.3758,-56.1344,https://www.bentonresources.ca/,3
+Project,Buchans,Canterra Minerals Corporation,Newfoundland and Labrador,"Zinc, lead, copper, silver, gold",Advanced project,Active,48.829018,-56.855965,https://canterraminerals.com/,4
+Project,Michelin,Paladin Energy Limited,Newfoundland and Labrador,Uranium,Advanced project,Active,54.584,-59.984,https://www.paladinenergy.com.au/,5
+Project,Scully Mine - Manganese project,Tacora Resources Inc.,Newfoundland and Labrador,Manganese,Advanced unconventional project,Active,52.91806,-66.91222,https://www.tacoraresources.com,6
+Project,Kamistiatusset (Kami),Champion Iron Ltd.,Newfoundland and Labrador,High-purity iron ore,Advanced project,Active,52.82176,-66.93855,https://www.championiron.com,7
+Project,East Kemptville,Avalon Advanced Materials Inc.,Nova Scotia,Tin,Advanced unconventional project,On hold / suspended,44.10091,-65.68645,https://www.avalonadvancedmaterials.com,13
+Project,Millstream,Atlantic Potash Millstream Corporation,New Brunswick,Potash,Advanced project,Active,45.705,-65.63,https://www.apmcpotash.ca,15
+Project,Nash Creek,Callinex Mines Inc.,New Brunswick,"Zinc, lead, silver",Advanced project,Active,47.88939,-66.09771,https://callinex.ca,16
+Project,Halfmile-Stratmat,New Brunswick Government,New Brunswick,"Zinc, lead, silver, copper, gold",Advanced project,On hold / suspended,47.30417,-66.3125,Not available/Pas disponible,17
+Project,Murray Brook,Canadian Copper Inc.,New Brunswick,"Zinc, lead, silver, copper, gold",Advanced project,Active,47.52528,-66.43167,https://canadiancopper.com/,18
+Project,Mount Pleasant,Adex Mining Inc.,New Brunswick,"Tin, zinc, tungsten, molybdenum",Advanced project,On hold / suspended,45.44167,-66.82,http://www.adexmining.com,19
+Project,Sisson,Northcliff Resources Ltd.,New Brunswick,"Tungsten, molybdenum",Advanced project,Active,46.365,-67.045,http://www.northcliffresources.com,20
+Project,Battery Hill,Manganese X Energy Corp.,New Brunswick,"Manganese, iron ore",Advanced project,Active,46.22531,-67.62547,https://www.manganesexenergycorp.com,21
+Project,Woodstock,Canadian Manganese Company Inc.,New Brunswick,"Manganese, iron ore",Advanced project,Active,46.18,-67.64,https://www.canadianmanganese.com,22
+Project,Crater Lake,Scandium Canada Ltd.,Quebec,"Scandium, rare earth elements",Advanced project,Active,55.35025,-63.8991,https://scandium-canada.com/,24
+Project,Strange Lake,Torngat Metals Ltd.,Quebec,"Rare earth elements, niobium",Advanced project,Active,56.35,-64.2,https://torngatmetals.com/,25
+Project,Kwyjibo,SOQUEM Inc. / Investissement Québec,Quebec,"Rare earth elements, phosphate, iron ore",Advanced project,Active,51.04975,-65.26564,https://www.projet-kwyjibo.com,26
+Project,Rare Earth Separation Plant,Torngat Metals Ltd.,Quebec,Rare earth elements,Advanced processing project,Active,50.2953,-66.3751,https://torngatmetals.com/,27
+Project,Arnaud,Mine Arnaud Inc.,Quebec,Phosphate,Advanced project,On hold / suspended,50.25,-66.5,Not available/Pas disponible,28
+Project,Lac Carheil (Lac Rainy Graphite),Metals Australia Ltd.,Quebec,Graphite,Advanced project,Active,52.60511,-67.07597,https://www.metalsaustralia.com.au,29
+Project,Lac Knife,Focus Graphite Inc.,Quebec,Graphite,Advanced project,Active,52.54974,-67.18179,http://www.focusgraphite.com,30
+Project,Coated Spheronized Purified Graphite (CSPG) Refi,Northern Graphite Corporation,Quebec,Coated spherical purified graphite,Advanced processing project,Active,49.2192,-68.1673,http://northerngraphite.com,31
+Project,Eldor (Ashram),Commerce Resources Corp.,Quebec,"Rare earth elements, fluorspar",Advanced project,Active,56.94583,-68.40417,https://commerceresources.com,32
+Project,Uatnan,Nouveau Monde Graphite Inc.,Quebec,Graphite,Advanced project,Active,51.14,-69.1,https://nmg.com/,33
+Project,Lac a L'Orignal (Moose Lake),First Phosphate Corp.,Quebec,"Phosphate, titanium, iron ore",Advanced project,Active,49.07,-70.58,https://firstphosphate.com/,34
+Project,Lac à Paul,Arianne Phosphate Inc.,Quebec,Phosphate,Advanced project,Active,49.9,-70.74,http://www.arianne-inc.com,35
+Project,Blackrock Pyrometallurgical Facility,Strategic Resources Inc.,Quebec,"Iron ore, vanadium, titanium",Advanced processing project,Active,48.399648,-70.854841,https://strategic-res.com/,36
+Project,Saint-Honoré,Magris Performance Materials Inc.,Quebec,Rare earth elements,Advanced project,On hold / suspended,48.54277,-71.15445,https://www.magrispm.com,37
+Project,Gallium Pilot Plant,Rio Tinto Group,Quebec,Gallium,Advanced processing project,Active,48.428476,-71.157919,https://www.riotinto.com/,38
+Project,Elysis,Alcoa Corporation / Rio Tinto Aluminum Inc.,Quebec,Aluminum,Advanced processing project,Active,48.43214,-71.17565,https://www.elysis.com,39
+Project,Bégin-Lamarche,First Phosphate Corp.,Quebec,Phosphate,Advanced project,Active,48.755833,-71.364167,https://firstphosphate.com/,40
+Project,Battery Material Plant,Nouveau Monde Graphite Inc.,Quebec,Coated spherical purified graphite,Advanced processing project,Active,46.38481,-72.37245,https://nmg.com/,41
+Project,Lithium Carbonate Refinery,Lithium Universe Ltd,Quebec,Lithium carbonate,Advanced processing project,Active,46.3638,-72.3932,https://www.lithiumuniverse.com/,42
+Project,Bécancour Plant,Euro Manganese Inc.,Quebec,Manganese sulphate,Advanced processing project,Active,46.333332,-72.433334,https://www.mn25.ca/,43
+Project,Nemaska lithium conversion facility,Nemaska Lithium Inc.,Quebec,Lithium hydroxide,Advanced processing project,Active,46.333332,-72.433334,https://www.nemaskalithium.com,44
+Project,Nickel Sulphate Plant,Vale S.A. ,Quebec,Nickel sulphate,Advanced processing project,Active,46.3471,-72.4335,https://vale.com,45
+Project,Adina,Winsome Resources,Quebec,Lithium (spodumene),Advanced project,Active,53.29997,-72.48467,https://winsomeresources.com.au/,46
+Project,Crevier,Niobay Metals Inc.,Quebec,"Niobium, tantalum",Advanced project,Active,49.46003,-72.7644,https://niobaymetals.com,47
+Project,Scandium Demonstration Plant,Rio Tinto Group,Quebec,Scandium,Advanced unconventional project,Active,46.043727,-73.139626,https://www.riotinto.com/,48
+Project,Lithium Demonstration Plant,Rio Tinto Group,Quebec,Lithium,Advanced processing project,Active,46.043727,-73.139626,https://www.riotinto.com/,49
+Project,REE Recycling Facility (Saint-Bruno),Geomega Resources Inc.,Quebec,Rare earth elements,Advanced unconventional project,Active,45.525976,-73.340812,https://geomega.ca,50
+Project,Lithion St-Bruno,Lithion Technologies,Quebec,Battery materials (black mass),Advanced processing project,Active,45.533333,-73.349998,https://www.lithiontechnologies.com/,51
+Project,Matawinie,Nouveau Monde Graphite Inc.,Quebec,Graphite,Advanced project,Active,46.61728,-73.9212,https://nmg.com/,52
+Project,Shaakichiuwaanaan (Corvette),Patriot Battery Metals Inc.,Quebec,"Lithium (spodumene), tantalum",Advanced project,Active,53.55369,-73.92993,https://patriotbatterymetals.com/,53
+Project,Lac Doré Vanadium,VanadiumCorp Resource Inc.,Quebec,"Iron ore, vanadium, titanium",Advanced project,Active,49.84573,-73.95682,https://www.vanadiumcorp.com,54
+Project,Blackrock,Strategic Resources Inc.,Quebec,"Iron ore, vanadium, titanium",Advanced project,Active,49.800453,-74.062113,https://strategic-res.com/,55
+Project,Mont Sorcier,Voyager Metals Inc.,Quebec,"Iron ore, vanadium",Advanced project,Active,49.918163,-74.127578,https://voyagermetals.com/,56
+Project,Corner Bay Complex,Doré Copper Mining Corp.,Quebec,"Copper, gold",Advanced project,Active,49.893,-74.309,https://www.dorecopper.com,57
+Project,Troilus,Troilus Gold Corporation,Quebec,"Gold, copper, silver",Advanced project,Active,51.01,-74.46,https://www.troilusgold.com,58
+Project,Miller,Canada Carbon Inc.,Quebec,Graphite,Advanced project,On hold / suspended,45.66498,-74.60994,https://www.canadacarbon.com,59
+Project,Scott Lake,Yorbeau Resources Inc.,Quebec,"Zinc, copper, gold, silver",Advanced project,Active,49.86103,-74.67023,https://www.yorbeauresources.com,60
+Project,Moblan,Sayona Mining Ltd.,Quebec,Lithium (spodumene),Advanced project,Active,50.73176,-74.91215,https://sayonamining.com.au/,61
+Project,La Loutre,Lomiko Metals Inc.,Quebec,Graphite,Advanced project,Active,46.03656,-74.99714,http://www.lomiko.com,62
+Project,Sirmac,Vision Lithium Inc.,Quebec,"Lithium (spodumene), tantalum",Advanced project,Active,50.62225,-75.47624,http://visionlithium.com,63
+Project,Whabouchi,Nemaska Lithium Inc.,Quebec,Lithium (spodumene),Advanced project,Active,51.67972,-75.85333,https://www.nemaskalithium.com,64
+Project,Rose,Critical Elements Lithium Corporation,Quebec,"Lithium (spodumene), tantalum",Advanced project,Active,52.022485,-76.172,https://www.cecorp.ca,65
+Project,Galaxy (James Bay Lithium),Arcadium Lithium PLC,Quebec,Lithium (spodumene),Advanced project,Active,52.23333,-77.06667,https://arcadiumlithium.com/,66
+Project,Abcourt-Barvue,Abcourt Mines Inc.,Quebec,"Zinc, silver",Advanced project,Active,48.52154,-77.67901,http://abcourt.com,67
+Project,North American Lithium (NAL) Lithium Carbonate P,Sayona Mining Ltd.,Quebec,Lithium carbonate,Advanced processing project,Active,48.4104,-77.8156,https://sayonamining.com.au/,68
+Project,Caber Complex (Matagami),Nuvau Minerals Corp.,Quebec,"Zinc, copper, silver, gold",Advanced project,Active,49.773163,-77.936644,http://nuvauminerals.com,69
+Project,Authier,Sayona Mining Ltd.,Quebec,Lithium (spodumene),Advanced project,Active,48.36207,-78.19557,https://sayonamining.com.au/,70
+Project,Dumont Nickel,Magneto Investments Limited Partnership,Quebec,"Nickel, cobalt, platinum, palladium, iron ore",Advanced project,Active,48.64667,-78.4425,https://www.dumontnickel.com/en/,71
+Project,Kipawa-Zeus,Quebec Precious Metals Corporation,Quebec,"Rare earth elements, zircon",Advanced project,On hold / suspended,46.81747,-78.4745,http://www.qpmcorp.ca,72
+Project,Horne 5,Falco Resources Ltd.,Quebec,"Gold, copper, zinc, silver",Advanced project,Active,48.25425,-79.00953,https://www.falcores.com/en/,73
+Project,Ontario Spoke,Li-Cycle Corp,Ontario,Battery materials (black mass),Battery recycling facility,On hold / suspended,44.233334,-76.5,https://li-cycle.com/,100
+Project,RapidSX Demonstration Plant,Ucore Rare Metals Inc.,Ontario,Rare earth elements,Demonstration plant,Active,44.233334,-76.5,https://ucore.com,101
+Project,Bissett Creek,Northern Graphite Corporation,Ontario,Graphite,Advanced project,Active,46.11814,-78.05992,http://northerngraphite.com,102
+Project,Kearney,G6 Energy Corp.,Ontario,Graphite,Past producer,Active,45.72635,-79.07927,https://www.gsixenergy.com/,103
+Project,Markham lithium reprocessing facility,Arcadium Lithium PLC,Ontario,Lithium metal,Advanced processing project,Active,43.8331,-79.3415,https://arcadiumlithium.com/,104
+Project,Battery Materials Park,Electra Battery Materials Corporation,Ontario,"Cobalt, nickel, lithium",Advanced processing project,Active,47.40635,-79.62229,https://electrabmc.com,105
+Project,Upper Beaver,Agnico Eagle Mines Limited,Ontario,"Gold, copper",Advanced project,Active,48.16,-79.76,https://www.agnicoeagle.com,106
+Project,River Valley,New Age Metals Inc.,Ontario,"Palladium, platinum, gold, nickel, copper, rhodium, cobalt",Advanced project,Active,46.70591,-80.27606,https://newagemetals.com,107
+Project,James Bay (Argor),Niobay Metals Inc.,Ontario,Niobium,Advanced project,On hold / suspended,50.83912,-80.63075,https://niobaymetals.com,108
+Project,Stobie,Vale S.A. ,Ontario,"Nickel, copper, platinum group metals, gold, silver, cobalt, selenium, tellurium",Advanced Project,Active,46.540385,-80.993493,https://vale.com,109
+Project,Redstone,"Jilin Jien Nickel Industry Co., Ltd.",Ontario,"Nickel, copper",Advanced project,On hold / suspended,48.31667,-81.16472,http://www.jlnickel.com.cn,110
+Project,Nickel processing plant,Canada Nickel Company Inc.,Ontario,Nickel,Advanced processing project,Active,48.4759,-81.3348,https://canadanickel.com/,111
+Project,Stainless Steel and Alloy Processing Facility,Canada Nickel Company Inc.,Ontario,"Nickel alloys, chromium alloys, stainless steel",Advanced processing project,Active,48.4759,-81.3348,https://canadanickel.com/,112
+Project,Crean Hill,Magna Mining Inc.,Ontario,"Nickel, copper, cobalt, platinum, palladium, gold",Advanced project,Active,46.42472,-81.36167,https://magnamining.com,113
+Project,Crawford,Canada Nickel Company Inc.,Ontario,"Nickel, iron ore, cobalt, palladium, platinum, chromite",Advanced project,Active,48.83972,-81.37309,https://canadanickel.com/,114
+Project,Victoria,KGHM Polska Miedź S.A.,Ontario,"Nickel, copper, gold, cobalt, platinum, palladium",Advanced project,Active,46.41667,-81.38333,https://kghm.com/en,115
+Project,Onaping Depth,Glencore Canada Corporation,Ontario,"Nickel, copper, cobalt, platinum, palladium, rhodium, gold, silver",Advanced project,Active,46.632019,-81.383878,https://www.glencore.ca,116
+Project,Shakespeare,Magna Mining Inc.,Ontario,"Nickel, copper, palladium, platinum, gold, cobalt",Advanced project,Active,46.33417,-81.85944,https://magnamining.com,117
+Project,Martison,Fox River Resources Corp.,Ontario,"Phosphate, niobium",Advanced project,Active,50.314444,-83.414444,http://fox-river.ca,118
+Project,Albany,Zentek Ltd.,Ontario,Graphite,Advanced project,Active,50.0293,-84.45181,https://www.zentek.com,119
+Project,Eagle's Nest,Wyloo Pty Ltd,Ontario,"Nickel, copper, gold, platinum, palladium",Advanced project,Active,52.74202,-86.3038,https://wyloo.com/,120
+Project,Marathon,Generation Mining Limited,Ontario,"Palladium, platinum, gold, copper, silver",Advanced project,Active,48.78758,-86.3263,https://genmining.com,121
+Project,Superior Lake,Frontier Energy Limited,Ontario,"Zinc, copper, gold, silver",Advanced project,Active,48.9775,-87.38361,https://frontierhe.com/about/,122
+Project,Georgia Lake,Rock Tech Lithium Inc.,Ontario,Lithium (spodumene),Advanced project,Active,49.45236,-88.00298,https://rocktechlithium.com,123
+Project,Lithium Refinery,Frontier Lithium Inc.,Ontario,"Lithium hydroxide, lithium carbonate",Advanced processing project,Active,48.9465,-88.2596,https://www.frontierlithium.com/,124
+Project,Lithium Hydroxide Refinery,Rock Tech Lithium Inc.,Ontario,Lithium hydroxide,Advanced processing project,Active,48.9465,-88.2596,https://rocktechlithium.com,125
+Project,Seymour Lake (Root Lake),Green Technology Metals Limited,Ontario,"Lithium (spodumene), tantalum",Advanced Project,Active,50.40987,-88.4491,https://www.greentm.com.au/,126
+Project,Thunder Bay North,Clean Air Metals Inc.,Ontario,"Platinum, palladium, gold, nickel, copper, silver",Advanced project,Active,48.79,-88.931,https://www.cleanairmetals.ca,127
+Project,Lake Superior plant,Avalon Advanced Materials Inc.,Ontario,Lithium hydroxide,Advanced processing project,Active,48.47357,-89.16099,https://www.avalonadvancedmaterials.com,128
+Project,Thunder Bay Plant,Green Technology Metals Limited,Ontario,Lithium hydroxide,Advanced processing project,Active,48.4568,-89.1719,https://www.greentm.com.au/,129
+Project,Thierry,Orecap Invest Corp.,Ontario,"Copper, nickel, silver, gold, platinum, palladium",Advanced project,Active,51.49667,-90.34694,https://orecap.ca/,130
+Project,Raleigh,International Lithium Corporation,Ontario,"Lithium (spodumene), rubidium",Advanced project,Active,49.40631,-91.945767,https://www.internationallithium.ca,131
+Project,PAK,Frontier Lithium Inc.,Ontario,"Lithium (spodumene), tantalum, tin, niobium, rubidium, cesium",Advanced project,Active,52.60026,-93.37727,https://www.frontierlithium.com,132
+Project,Kenbridge,Tartisan Nickel Corp.,Ontario,"Nickel, copper, cobalt",Advanced project,Active,49.48357,-93.6347,http://www.tartisannickel.com,133
+Project,Separation Rapids,Avalon Advanced Materials Inc.,Ontario,"Lithium (petalite), tantalum",Advanced project,Active,50.266,-94.58258,https://www.avalonadvancedmaterials.com,134
+Project,MM (Makwa Mayville),Grid Metals Corp.,Manitoba,"Nickel, copper, gold, platinum, palladium, cobalt",Advanced project,Active,50.6298,-95.60953,https://gridmetalscorp.com,153
+Project,Minago,Norway House Cree Nation,Manitoba,"Nickel, palladium, platinum",Advanced project,Active,54.1092,-99.21912,https://nhcn.ca/,154
+Project,Tower,Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Advanced project,On hold / suspended,53.9623,-99.2284,https://hudbayminerals.com,155
+Project,Talbot (Snow Lake),Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Advanced project,Active,54.1133,-99.6343,https://hudbayminerals.com,156
+Project,Thompson Bros (Snow Lake Lithium),Snow Lake Resources,Manitoba,Lithium (spodumene),Advanced project,Active,54.800199,-99.74634,https://snowlakeenergy.com/,157
+Project,Wim,Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Advanced project,Active,55.02136,-100.05248,https://hudbayminerals.com,158
+Project,1901 (Snow Lake),Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Advanced project,Active,54.8557,-100.134,https://hudbayminerals.com,159
+Project,Pen II (Snow Lake),Hudbay Minerals Inc.,Manitoba,"Gold, zinc, copper, silver",Advanced project,Active,54.857778,-100.205556,https://hudbayminerals.com,160
+Project,Rail (Snow Lake),Hudbay Minerals Inc.,Manitoba,"Copper, gold, zinc, silver",Advanced project,On hold / suspended,54.7463,-100.5916,https://hudbayminerals.com,161
+Project,Lynn Lake,Corazon Mining Limited,Manitoba,"Nickel, copper, cobalt",Advanced project,Active,56.85217,-101.03486,https://corazon.com.au,162
+Project,PADCOM Potash Mine,Potash and Agri Development Corporation of Manitoba Ltd. (PADCOM),Manitoba,Potash,Advanced project,Active,50.735345,-101.483097,https://manitobapotash.ca,163
+Project,McIlvenna Bay,Foran Mining Corporation,Saskatchewan,"Copper, zinc, gold, silver, lead",Advanced project,Active,54.65977,-102.89498,https://www.foranmining.com,168
+Project,Viewfield / Mansur,EMP Metals Corp,Saskatchewan,Lithium (brine),Advanced unconventional project,Active,49.66,-103.1,https://empmetals.com/,169
+Project,Prairie Lithium,Arizona Lithium Ltd.,Saskatchewan,Lithium (brine),Advanced unconventional project,Active,49.21363,-103.63518,https://www.arizonalithium.com/,170
+Project,Horseshoe-Raven,Uranium Energy Corp,Saskatchewan,Uranium,Advanced project,Active,58.15333,-103.73639,https://www.uraniumenergy.com/,171
+Project,Wynyard,Karnalyte Resources Inc.,Saskatchewan,"Potash, magnesium",Advanced project,Active,51.69246,-103.931327,http://karnalyte.com,172
+Project,Muskowekwan,Encanto Potash Corporation,Saskatchewan,Potash,Advanced project,Active,51.33382,-104.01827,http://www.encantopotash.com,173
+Project,Waterbury,Denison Mines Corp.,Saskatchewan,Uranium,Advanced project,Active,58.3478,-104.03032,https://denisonmines.com,174
+Project,Roughrider,Uranium Energy Corp,Saskatchewan,Uranium,Advanced project,Active,58.338,-104.037,https://www.uraniumenergy.com/,175
+Project,Midwest,Orano Canada Inc. / Denison Mines Corp.,Saskatchewan,Uranium,Advanced project,Active,58.30535,-104.08859,https://denisonmines.com/,176
+Project,Milestone,Western Resources Corp.,Saskatchewan,Potash,Advanced project,Active,50.236669,-104.239825,https://www.westernresources.com,177
+Project,Southey,"Yancoal Canada Resources Co., Ltd.",Saskatchewan,Potash,Advanced project,Active,51.11466,-104.65979,https://www.yancoal.ca,178
+Project,Jansen,BHP Group Limited,Saskatchewan,Potash,Advanced project,Active,51.8991,-104.71415,https://www.bhp.com,179
+Project,Wheeler River,Denison Mines Corp.,Saskatchewan,Uranium,Advanced project,Active,57.50888,-105.38137,https://denisonmines.com,180
+Project,Millennium,Cameco Corporation,Saskatchewan,Uranium,Advanced project,On hold / suspended,57.52045,-105.63442,https://www.cameco.com/,181
+Project,Vanguard,Gensource Potash Corp.,Saskatchewan,Potash,Advanced project,Active,50.84335,-106.21347,https://gensourcepotash.ca,182
+Project,Rare Earth Processing Facility,Saskatchewan Research Council (SRC),Saskatchewan,Rare earth elements,Advanced processing project,Active,52.1400327,-106.62737,https://www.src.sk.ca,183
+Project,Chaplin Sulphate of Potash Facility,Saskatchewan Mining and Minerals Inc.,Saskatchewan,Potash,Advanced processing project,Active,50.460722,-106.669814,https://saskatchewanminingandminerals.com/,184
+Project,Rook I,NexGen Energy Ltd.,Saskatchewan,Uranium,Advanced project,Active,57.59144,-108.9925,https://www.nexgenenergy.ca,185
+Project,Kindersley Lithium,Grounded Lithium Corp.,Saskatchewan,Lithium (brine),Advanced unconventional project,Active,51.73894139,-109.1912056,https://groundedlithium.com/,186
+Project,Patterson Lake South,Paladin Energy Limited,Saskatchewan,Uranium,Advanced project,Active,57.639,-109.364,https://www.paladinenergy.com.au/,187
+Project,Horizon,CVW CleanTech Inc. ,Alberta,"Zircon, titanium, rare earth elements",Advanced unconventional project,Active,45.57462,-73.450825,https://cvwcleantech.com,211
+Project,Fortune Minerals Refinery,Fortune Minerals Limited,Alberta,"Cobalt, gold, bismuth, copper",Advanced processing project,Active,53.797615,-112.513502,https://www.fortuneminerals.com,212
+Project,Bashaw District,E3 Lithium Ltd.,Alberta,Lithium (brine),Advanced unconventional project,Active,51.77696,-113.93655,https://www.e3lithium.ca/,213
+Project,Lithium Hydroxide Refinery,E3 Lithium Ltd.,Alberta,Lithium hydroxide,Advanced processing project,Active,51.777,-113.9366,https://www.e3lithium.ca/,214
+Project,Boardwalk,LithiumBank Resources Corp.,Alberta,Lithium (brine),Advanced unconventional project,Active,54.946792,-117.163427,https://www.lithiumbank.ca/,215
+Project,Worsley,First Helium Inc.,Alberta,Helium,Advanced project,Active,56.507923,-119.1341,https://www.firsthelium.com/,216
+Project,Rainbow Lake,Volt Lithium Corporation,Alberta,Lithium (brine),Advanced unconventional project,Active,58.50664,-119.30174,https://voltlithium.com/,217
+Project,Driftwood Creek,MGX Minerals Inc.,British Columbia,Magnesium,Advanced project,Active,50.904,-116.575,http://mgxminerals.com,222
+Project,Trail EV Battery Recycling Plant,Teck Resources Limited,British Columbia,Battery materials (black mass),Advanced processing project,Active,49.101,-117.718,https://www.teck.com/,223
+Project,Record Ridge,West High Yield Resources Ltd.,British Columbia,Magnesium,Advanced project,Active,49.082,-117.884,http://www.whyresources.com,224
+Project,Revel Ridge,Rokmaster Resources Corp.,British Columbia,"Gold, lead, silver, zinc",Advanced project,Active,51.287,-118.121,https://rokmaster.com,225
+Project,Golden Crown (Greenwood),Phoenix Copper Company Inc.,British Columbia,"Gold, copper",Advanced project,On hold / suspended,49.09,-118.59,https://phoenixcopperlimited.com/,226
+Project,Blue River,Capacitor Metals Corp.,British Columbia,"Tantalum, niobium",Advanced project,Active,52.30233,-119.15624,Not available/Pas disponible,227
+Project,Yellowhead,Taseko Mines Limited,British Columbia,"Copper, gold, silver",Advanced project,Active,51.52,-119.817,https://www.tasekomines.com,228
+Project,Wapiti,Fertoz Limited,British Columbia,Phosphate,Advanced project,Active,54.35838,-120.43197,https://fertoz.com/,229
+Project,Ajax,KGHM Polska Miedź S.A.,British Columbia,"Copper, gold, silver",Advanced project,On hold / suspended,50.63,-120.46,https://kghm.com/en,230
+Project,Wicheeda,Defense Metals Corp.,British Columbia,Rare earth elements,Advanced project,Active,54.53141,-122.09912,https://defensemetals.com,231
+Project,Lithium Refinery,Mangrove Lithium,British Columbia,"Lithium hydroxide, lithium carbonate",Advanced processing project,Active,49.16,-122.96,https://www.mangrovelithium.com/,232
+Project,New Prosperity,Taseko Mines Limited,British Columbia,"Gold, copper",Advanced project,On hold / suspended,51.46,-123.62,https://www.tasekomines.com,233
+Project,Aley,Taseko Mines Limited,British Columbia,Niobium,Advanced project,Active,56.4471,-123.77829,https://www.tasekomines.com,234
+Project,Akie,ZincX Resources Corp.,British Columbia,"Zinc, lead, silver",Advanced project,Active,57.38088,-124.86599,http://zincxresources.com,235
+Project,Kwanika-Stardust,NorthWest Copper Corp.,British Columbia,"Copper, gold, silver",Advanced project,Active,55.415303,-125.271268,https://northwestcopper.ca,236
+Project,Decar (Baptiste),FPX Nickel Corp.,British Columbia,"Nickel, cobalt",Advanced project,Active,54.894513,-125.359691,https://fpxnickel.com,237
+Project,Morrison,Pacific Booker Minerals Inc.,British Columbia,"Copper, gold, molybdenum",Advanced project,On hold / suspended,55.1944,-126.3158,https://www.pacificbooker.com,238
+Project,Kemess,Centerra Gold Inc.,British Columbia,"Copper, gold, silver",Advanced project,On hold / suspended,57.05037,-126.77117,https://www.centerragold.com,239
+Project,Ootsa,Surge Copper Corp.,British Columbia,"Copper, gold, molybdenum, silver",Advanced project,Active,53.63333,-127.08333,https://surgecopper.com/,240
+Project,Davidson,Moon River Moly Ltd.,British Columbia,"Molybdenum, tungsten",Advanced project,Active,54.82,-127.29861,https://moonrivermoly.com/,241
+Project,Deer Horn,First Tellurium Corp.,British Columbia,"Gold, silver, tellurium, copper, zinc, lead",Advanced project,Active,53.3607,-127.30826,https://firsttellurium.com,242
+Project,Berg,Surge Copper Corp.,British Columbia,"Copper, Molybdenum, Gold, Silver",Advanced project,Active,53.802,-127.431,https://surgecopper.com/,243
+Project,North Island,Northisle Copper and Gold Inc.,British Columbia,"Copper, gold, molybdenum, rhenium",Advanced project,Active,50.67556,-127.85639,https://www.northisle.ca,244
+Project,Kutcho,Kutcho Copper Corp.,British Columbia,"Copper, zinc, silver, gold, lead",Advanced project,Active,58.20996,-128.38736,https://www.kutcho.ca,245
+Project,Turnagain,Hard Creek Nickel Corp. (Giga Metals Corporation),British Columbia,"Nickel, cobalt, platinum, palladium",Advanced project,Active,58.47856,-128.86282,https://www.gigametals.com,246
+Project,Avanti Kitsault,New Moly LLC,British Columbia,"Molybdenum, silver, lead",Advanced project,Active,55.422,-129.419,https://newmoly.com/,247
+Project,Kitsault Valley,Dolly Varden Silver Corporation,British Columbia,"Gold, silver, copper, lead",Advanced project,Active,55.75361,-129.57778,https://dollyvardensilver.com,248
+Project,GJ,Newmont Corporation,British Columbia,"Copper, gold, silver",Advanced project,Active,57.63,-130.25,https://newmont.com/,249
+Project,KSM,Seabridge Gold Inc.,British Columbia,"Gold, copper, silver, molybdenum",Advanced project,Active,56.46666,-130.33556,https://seabridgegold.com,250
+Project,Silvertip,Coeur Mining Inc.,British Columbia,"Silver, zinc, lead",Advanced project,Active,59.89529,-130.38,https://www.coeur.com/,251
+Project,Schaft Creek,Teck Resources Limited / Copper Fox Metals Inc.,British Columbia,"Copper, molybdenum, gold, silver",Advanced project,Active,57.36667,-131,https://copperfoxmetals.com/,252
+Project,Iskut,Seabridge Gold Inc.,British Columbia,"Gold, copper, silver, iron ore",Advanced project,Active,56.66667,-131.0925,https://seabridgegold.com,253
+Project,Galore Creek,Newmont Corporation / Teck Resources Limited,British Columbia,"Copper, gold, silver",Advanced project,Active,57.13,-131.45,https://newmont.com/,254
+Project,Selwyn,Selwyn Chihong Mining Ltd.,Yukon,"Zinc, lead",Advanced project,On hold / suspended,62.45542,-129.20011,http://selwynchihong.com,268
+Project,Macpass,Fireweed Metals Corp.,Yukon,"Zinc, lead, silver",Advanced project,Active,63.16057,-130.15143,https://fireweedmetals.com,269
+Project,Mactung,Fireweed Metals Corp.,Yukon,Tungsten,Advanced project,Active,63.28222222,-130.1525,https://fireweedmetals.com,270
+Project,Kudz Ze Kayah,BMC (UK) Limited,Yukon,"Zinc, lead, copper, silver, gold",Advanced project,Active,61.47108,-130.59894,https://bmcminerals.com,271
+Project,Marg,Azarga Metals Corp.,Yukon,"Zinc, copper, lead, gold, silver",Advanced project,Active,64.01187,-134.43958,https://azargametals.com,272
+Project,Carmacks,Granite Creek Copper,Yukon,"Copper, gold, silver, molybdenum",Advanced project,Active,62.33,-136.7,https://gcxcopper.com,273
+Project,Freegold Mountain,Triumph Gold Corp.,Yukon,"Gold, silver, copper, molybdenum, tungsten",Advanced project,Active,62.3,-137.2,https://www.triumphgoldcorp.com,274
+Project,Minto,Government of Yukon,Yukon,"Copper, gold, silver",Past producer,On hold / suspended,62.618875,-137.23858,Not available/Pas disponible,275
+Project,Klaza,Rockhaven Resources Ltd.,Yukon,"Gold, silver, lead, zinc",Advanced project,Active,62.14117,-137.3175,https://www.rockhavenresources.com,276
+Project,Casino,Western Copper and Gold Corporation,Yukon,"Copper, gold, molybdenum, silver",Advanced project,Active,62.73333,-138.83333,https://www.westerncopperandgold.com,277
+Project,Nickel Shaw,Nickel Creek Platinum Corp.,Yukon,"Nickel, copper, platinum, palladium, gold, cobalt",Advanced project,Active,61.46667,-139.53333,http://www.nickelcreekplatinum.com,278
+Project,Nechalacho - Basal Zone,Avalon Advanced Materials Inc.,Northwest Territories,"Rare earth elements, niobium, tantalum, zirconium",Advanced project,Active,62.11806,-112.59972,https://www.avalonadvancedmaterials.com,280
+Project,Nechalacho - T-Zone & Tardiff Zone,Vital Metals Inc.,Northwest Territories,Rare earth elements,Advanced project,Active,62.11806,-112.59972,https://vitalmetals.com/,281
+Project,Pine Point,Osisko Metals Inc.,Northwest Territories,"Zinc, lead",Advanced project,Active,60.87216,-114.38652,https://www.osiskometals.com,282
+Project,NICO,Fortune Minerals Limited,Northwest Territories,"Cobalt, gold, bismuth, copper",Advanced project,Active,63.55,-116.74583,https://www.fortuneminerals.com,283
+Project,Prairie Creek,NorZinc Ltd.,Northwest Territories,"Zinc, lead, silver",Advanced project,Active,61.55713,-124.79938,https://norzinc.com,284
+Project,Ferguson Lake,Canadian North Resources Inc.,Nunavut,"Nickel, copper, palladium, platinum, cobalt",Advanced project,Active,62.87306,-96.83306,https://www.cnresources.com,286
+Project,Kiggavik-Sissons,Orano Canada Inc.,Nunavut,Uranium,Advanced project,On hold / suspended,64.385,-97.725,https://www.orano.group/,287
+Project,Hackett River,Glencore Canada Corporation,Nunavut,"Zinc, lead, copper, silver, gold",Advanced project,On hold / suspended,65.91667,-108.36306,https://www.glencore.ca,288
+Project,High Lake,MMG Limited,Nunavut,"Copper, zinc, gold, silver, lead",Advanced project,Active,67.37556,-110.8436,https://www.mmg.com/,289
+Project,Izok Lake,MMG Limited,Nunavut,"Zinc, copper, silver, lead, gold",Advanced project,Active,65.63056,-112.79889,https://www.mmg.com/,290
+Processing,Long Harbour,Vale S.A. ,Newfoundland and Labrador,"Nickel, copper, cobalt",Refinery,Active,47.410938,-53.811792,https://vale.com,11
+Processing,Carol Lake,Iron Ore Company of Canada Inc.,Newfoundland and Labrador,High-purity iron ore pellets (direct reduction grade),Pelletizing plant,Active,52.95872,-66.89277,https://www.riotinto.com,12
+Processing,Alouette,"Rio Tinto Group. / Aluminium Austria Metall Québec Inc. / Hydro Aluminium a.s. / Société générale de financement du Québec / Marubeni Québec Inc.",Quebec,Aluminum (pure),Smelter,Active,50.1571,-66.4429,https://www.riotinto.com/,83
+Processing,Port-Cartier,ArcelorMittal S.A.,Quebec,High-purity iron ore pellets (direct reduction grade),Pelletizing plant,Active,50.03213,-66.797531,https://northamerica.arcelormittal.com,84
+Processing,Baie-Comeau,Alcoa Corporation,Quebec,"Aluminum (pure or alloyed)",Smelter,Active,49.2562,-68.1491,https://www.alcoa.com,85
+Processing,Grande-Baie,Rio Tinto Group,Quebec,"Aluminum (pure or alloyed)",Smelter,Active,48.3058,-70.9258,https://www.riotinto.com/,86
+Processing,Laterrière,Rio Tinto Group,Quebec,"Aluminum (pure or alloyed)",Smelter,Active,48.3013,-71.1287,https://www.riotinto.com/,87
+Processing,Vaudreuil Works,Rio Tinto Group,Quebec,Alumina,Refinery,Active,48.428476,-71.157919,https://www.riotinto.com/,88
+Processing,Niobec Converter,Magris Performance Materials Inc.,Quebec,Ferroniobium,Ferroalloy plant,Active,48.531738,-71.158168,https://www.magrispm.com,89
+Processing,Arvida,Rio Tinto Group,Quebec,"Aluminum (pure or alloyed), alumina, aluminum chemicals, composites",Smelter,Active,48.430174,-71.165521,https://www.riotinto.com/,90
+Processing,Alma,Rio Tinto Group,Quebec,"Aluminum (pure or alloyed)",Smelter,Active,48.5847,-71.6897,https://www.riotinto.com/,91
+Processing,Deschambault,Alcoa Corporation,Quebec,Aluminum (pure),Smelter,Active,46.6939,-71.9467,https://www.alcoa.com,92
+Processing,Bécancour,Alcoa Corporation,Quebec,"Aluminum (pure or alloyed)",Smelter,Active,46.381,-72.3852,https://www.alcoa.com,93
+Processing,"Bécancour Silicon","Ferroglobe PLC / DOW Corning",Quebec,"Silicon metal, ferrosilicon",Ferroalloy plant,Active,46.36984,-72.38884,https://www.ferroglobe.com/,94
+Processing,Rio Tinto Iron and Titanium,Rio Tinto Group,Quebec,"Steel, titanium dioxide, scandium",Electric arc furnace,Active,46.045907,-73.138424,https://www.riotinto.com/,95
+Processing,CCR,Glencore Canada Corporation,Quebec,"Copper (cathodes), gold, silver, tellurium, selenium, nickel sulfate, copper sulfate, platinum group metals",Refinery,Active,45.627518,-73.511778,https://www.glencore.ca,96
+Processing,Montréal,5N Plus Inc.,Quebec,"Tellurium, cadmium",Refinery,Active,45.49143,-73.71794,https://www.5nplus.com,97
+Processing,Canadian Electrolytic Zinc Limited (CEZinc),Glencore Canada Corporation,Quebec,"Zinc, cadmium, liquid sulfur dioxide, sulfuric acid",Refinery,Active,45.228312,-74.097205,https://www.cezinc.com/en,98
+Processing,Horne,Glencore Canada Corporation,Quebec,"Copper anodes, precious metals, sulfuric acid",Smelter,Active,48.2534,-79.0151,https://www.glencore.ca,99
+Processing,Ottawa Plant,Masterloy Products Limited,Ontario,"Ferrovanadium, ferromolybdenum",Ferroalloy plant,Active,45.298042,-75.562391,http://www.masterloy.com,145
+Processing,Port Hope,Cameco Corporation,Ontario,"Uranium (hexafluoride, dioxide, metals, alloys)",Conversion facility,Active,43.9429,-78.2943,https://www.cameco.com/,146
+Processing,Neo Performance Materials ULC,Neo Performance Materials Inc.,Ontario,"Gallium, indium",Secondary refinery,Active,44.276019,-78.299966,https://www.neomaterials.com,147
+Processing,Port Colborne,Vale S.A. ,Ontario,"Electrolytic cobalt, platinum group metals (in residues)",Refinery,Active,42.883,-79.24,https://vale.com,148
+Processing,Mississauga,Real Alloy Canada Ltd.,Ontario,Recycled aluminum,Secondary smelter,Active,43.7058,-79.6671,https://www.realalloy.com,149
+Processing,Sudbury,Glencore Canada Corporation,Ontario,"Nickel-copper matte containing cobalt, gold, silver, platinum group metals",Smelter plant,Active,46.5763,-80.7993,https://www.glencore.ca,150
+Processing,Copper Cliff Complex ,Vale S.A. ,Ontario,"Nickel (oxide sinter, pellets, powder, sulfide), copper cathodes, gold, silver, selenium cake, tellurium dioxide cake, platinum group metals (in residues), liquid sulfur dioxide, sulfuric acid","Smelter, refinery, plant",Active,46.4801,-81.0569,https://vale.com,151
+Processing,Blind River,Cameco Corporation,Ontario,Uranium (trioxide),Refinery,Active,46.180896,-83.017246,https://www.cameco.com/,152
+Processing,The Cobalt Refinery Company Inc.,Sherritt International Corporation / General Nickel Company S.A.,Alberta,"Nickel, cobalt, copper sulfide, ammonium sulfate",Refinery,Active,53.719929,-113.19011,https://www.sherritt.com,220
+Processing,Baymag,Baymag Inc.,Alberta,Magnesium oxide,Plant,Active,51.060022,-115.210061,https://www.baymag.com/,221
+Processing,Trail,Teck Resources Limited,British Columbia,"Zinc, lead, bismuth, cadmium, indium, germanium, precious metals, liquid sulfur dioxide, sulfuric acid","Smelter, refinery, plant",Active,49.0999,-117.7137,https://www.teck.com/,266
+Processing,Kitimat,Rio Tinto Group,British Columbia,"Aluminum (pure or alloyed)",Smelter,Active,53.9976,-128.6954,https://www.riotinto.com/,267`;
+
+const RAW_EXPLOR_CSV = `#,Project Name,Province / Territory,Commodity Group,Latitude,Longitude,Company,Website
+1,Queensway,Newfoundland and Labrador,Gold,48.97861,-54.77674,New Found Gold Corp,newfoundgold.ca
+2,Michelin,Newfoundland and Labrador,Uranium,54.6472,-60.069825,Paladin Energy,paladinenergy.com.au
+3,Kamistiatusset (Kami),Newfoundland and Labrador,Iron ore,52.82176,-66.93855,Champion Iron,championiron.com
+4,Goldboro,Nova Scotia,Gold,45.2,-61.64,NexGold Mining,nexgold.com
+5,15-Mile,Nova Scotia,Gold,45.14016,-62.51041,St Barbara,stbarbara.com.au
+6,Gaspé,Quebec,Copper,48.96806,-65.51861,Osisko Metals,osiskometals.com
+7,Ashram,Quebec,Rare earth elements,56.94041,-68.37279,Commerce Resources Corp,commerceresources.com
+8,Bégin-Lamarche,Quebec,Phosphorus (Phosphate),48.756086,-71.364168,Arianne Phosphate,ariannephosphate.com
+9,Adina,Quebec,Lithium,53.29997,-72.48467,Winsome Resources,winsomeresources.com.au
+10,Matawinie,Quebec,Graphite,46.61728,-73.9212,Nouveau Monde Graphite,nmg.com
+11,Corvette,Quebec,Lithium,53.52101,-73.93774,Patriot Battery Metals,patriotbatterymetals.com
+12,Troilus,Quebec,Gold,51.01024,-74.46643,Troilus Gold,troilusgold.com
+13,Frotet,Quebec,Gold,50.887283,-74.57744,Kenorland Minerals,kenorlandminerals.com
+14,Moblan,Quebec,Lithium,50.73002,-74.89988,Sayona Mining,sayonamining.com.au
+15,Urban Barry,Quebec,Gold,49.06002,-75.3563,Osisko Mining,osiskomining.com
+16,NISK,Quebec,Nickel,51.70532,-75.60596,Power Metallic,powermetallic.com
+17,Windfall,Quebec,Gold,49.05,-75.66,Osisko Mining,osiskomining.com
+18,Rose,Quebec,Lithium,52.02036,-76.15678,Critical Elements Lithium,cecorp.ca
+19,James Bay,Quebec,Lithium,52.23333,-77.06667,Rio Tinto,riotinto.com
+20,Val-d'Or East,Quebec,Gold,48.16206,-77.53486,Probe Gold,probegold.com
+21,Marban,Quebec,Gold,48.15497,-78.00544,Agnico Eagle Mines,agnicoeagle.com
+22,O'Brien,Quebec,Gold,48.235735,-78.399512,Radisson Mining,radissonmining.com
+23,Dumont,Quebec,Nickel,48.64244,-78.44274,Dumont Nickel (Waterton),N/A
+24,B26,Quebec,Copper,49.75193,-78.87287,Abitibi Metals,abitibimetals.com
+25,Martinière,Quebec,Gold,50.02833,-79.02361,Wallbridge Mining,wallbridgemining.com
+26,Perron,Quebec,Gold,49.023136,-79.448706,Amex Exploration,amexexploration.com
+27,Kerr-Addison,Ontario,Gold,48.138,-79.578,Gold Candle Ltd,goldcandle.com
+28,Larder Lake,Ontario,Gold,48.12381,-79.6441,MAG Silver,magsilver.com
+29,Tower gold,Ontario,Gold,48.46667,-80.08333,STLLR Gold,stllrgold.com
+30,Fenn-Gib,Ontario,Gold,48.52789,-80.20849,Mayfair Gold,mayfairgold.ca
+31,Bradshaw,Ontario,Gold,48.73471,-81.11843,Gowest Gold,gowestgold.com
+32,Crean Hill,Ontario,Nickel,46.42944,-81.34988,KGHM International,kghm.com
+33,Crawford,Ontario,Nickel,48.836042,-81.354381,Canada Nickel,canadanickel.com
+34,Wawa,Ontario,Gold,47.96883,-84.7581,Red Pine Exploration,redpineexp.com
+35,Golden Sky,Ontario,Gold,48.03881,-85.416301,Wesdome Gold Mines,wesdome.com
+36,Eagle's Nest,Ontario,Nickel,52.74202,-86.3038,Wyloo Metals,wyloogroup.com
+37,Marathon,Ontario,Palladium,48.86796,-86.48681,Generation Mining,genmining.com
+38,Seymour,Ontario,Lithium,50.35218,-88.43012,Green Technology Metals,greentm.com.au
+39,Moss Lake,Ontario,Gold,48.53421,-90.7216,Goldshore Resources,goldshoreresources.com
+40,Springpole,Ontario,Gold,51.396,-92.289,First Mining Gold,firstmininggold.com
+41,Goliath,Ontario,Gold,49.75611,-92.54944,NexGold Mining,nexgold.com
+42,Pakeagama Lake,Ontario,Lithium,52.614525,-93.365435,N/A,N/A
+43,Great Bear,Ontario,Gold,50.85089,-93.61957,Kinross Gold,kinross.com
+44,Madsen,Ontario,Gold,50.967,-93.918,West Red Lake Gold Mines,westredlakegold.com
+45,Lynn Lake,Manitoba,Gold,56.90667,-100.44167,Alamos Gold,alamosgold.com
+46,McIlvenna Bay,Saskatchewan,Copper,54.65977,-102.89498,Foran Mining,foranmining.com
+47,Roughrider,Saskatchewan,Uranium,58.338,-104.037,Rio Tinto,riotinto.com
+48,Larocque East,Saskatchewan,Uranium,58.62337,-104.16932,IsoEnergy,isoenergy.ca
+49,Gemini,Saskatchewan,Uranium,57.50188,-104.56595,N/A,N/A
+50,Hook,Saskatchewan,Uranium,57.33906,-104.62577,N/A,N/A
+51,West McArthur,Saskatchewan,Uranium,57.73558,-105.32828,Rio Tinto,riotinto.com
+52,Denison Mines Corp.,Saskatchewan,Uranium,57.53304,-105.41586,Denison Mines,denisonmines.com
+53,Moon Lake South,Saskatchewan,Uranium,57.4421,-105.55427,N/A,N/A
+54,Ursa,Saskatchewan,Uranium,57.8529,-105.87441,N/A,N/A
+55,Rook 1,Saskatchewan,Uranium,57.668,-109.217,NexGen Energy,nexgenenergy.ca
+56,Patterson Lake North,Saskatchewan,Uranium,57.79853,-109.33207,Fission 3.0 / Purepoint Uranium,fission3corp.com
+57,Patterson Lake South,Saskatchewan,Uranium,57.639,-109.364,Fission Uranium,fissionuranium.com
+58,Clearwater,Alberta,Lithium,51.77696,-113.93655,E3 Lithium,e3lithium.ca
+59,Grassy Mountain,Alberta,Coal,49.542,-114.433,Northback Holdings,northbackholdings.com
+60,Boardwalk,Alberta,Lithium,54.97925,-117.2243,LithiumBank Resources,lithiumbank.ca
+61,MPD,British Columbia,Copper,49.75382,-120.47141,Kodiak Copper,kodiakcoppercorp.com
+62,Murray River,British Columbia,Coal,55.02,-121.0533,N/A,N/A
+63,Bralorne,British Columbia,Gold,50.77912,-122.82235,Talisker Resources,taliskerresources.com
+64,Cirque,British Columbia,Zinc,57.51049,-125.17623,Teck Resources,teck.com
+65,Baptiste,British Columbia,Nickel,54.9252,-125.35635,FPX Nickel,fpxnickel.com
+66,Duke,British Columbia,Copper,55.24964,-126.16518,N/A,N/A
+67,NAK,British Columbia,Copper,55.27916,-126.2317,N/A,N/A
+68,Joy,British Columbia,Copper,57.27876,-126.74042,N/A,N/A
+69,Kemess,British Columbia,Gold,56.997,-126.7732,Centerra Gold,centerragold.com
+70,Lawyers-Ranch,British Columbia,Gold,57.47996,-127.35734,Thesis Gold,thesisgold.com
+71,North Island,British Columbia,Copper,50.67556,-127.85639,N/A,N/A
+72,Kitsault Valley,British Columbia,Gold,55.75361,-129.57778,N/A,N/A
+73,Golddigger,British Columbia,Gold,55.6107,-129.6439,N/A,N/A
+74,Cassiar,British Columbia,Gold,59.20349,-129.66778,Cassiar Gold,cassiargold.com
+75,Treaty Creek,British Columbia,Gold,56.61158,-130.15974,Tudor Gold,tudorgold.com
+76,KSM,British Columbia,Gold,56.46778,-130.26722,Seabridge Gold,seabridgegold.com
+77,Silvertip,British Columbia,Gold,59.89529,-130.37822,N/A,N/A
+78,Eskay,British Columbia,Gold,56.65392,-130.43129,Skeena Resources,skeenaresources.com
+79,KSP,British Columbia,Gold,56.52804,-130.80341,Seabridge Gold,seabridgegold.com
+80,Schaft Creek,British Columbia,Copper,57.36667,-131,Teck Resources / Newmont JV,teck.com
+81,Iskut,British Columbia,Gold,56.66667,-131.0925,N/A,N/A
+82,Galore Creek,British Columbia,Copper,57.13556,-131.45361,Newmont / Teck JV,newmont.com
+83,Thorn,British Columbia,Copper,58.54556,-132.80722,Skeena Resources,skeenaresources.com
+84,New Polaris,British Columbia,Gold,58.71538,-133.64751,N/A,N/A
+85,3 Aces,Yukon,Gold,61.7479,-128.3669,N/A,N/A
+86,MacMillan Pass,Yukon,Zinc,63.16057,-130.15143,Fireweed Metals,fireweedmetals.com
+87,Rogue,Yukon,Gold,63.63,-131.3,N/A,N/A
+88,Whitehorse,Yukon,Copper,60.63216,-135.06322,N/A,N/A
+89,AurMac,Yukon,Gold,63.8481,-135.62068,Banyan Gold,banyangold.com
+90,RC,Yukon,Gold,63.83223,-137.23619,N/A,N/A
+91,Casino,Yukon,Copper,62.7333,-138.8333,Western Copper and Gold,westerncopperandgold.com
+92,Coffee,Yukon,Gold,62.86666,-139.15,Newmont,newmont.com
+93,Yellowknife,Northwest Territories,Lithium,62.58,-113.502,Li-FT Power,li-ft.com
+94,Pine Point,Northwest Territories,Zinc,60.87216,-114.38652,Osisko Metals,osiskometals.com
+95,Colomac,Northwest Territories,Gold,64.39191,-115.02941,STLLR Gold,stllrgold.com
+96,Prairie Creek,Northwest Territories,Zinc,61.55713,-124.79938,N/A,N/A
+97,Storm,Nunavut,Copper,73.64593,-94.07454,American West Metals,americanwestmetals.com
+98,Aberdeen,Nunavut,Uranium,64.32511,-98.09726,N/A,N/A
+99,Angilak,Nunavut,Uranium,62.51778,-98.7025,Atha Energy,athaenergycorp.com
+100,Madrid,Nunavut,Gold,67.611142,-106.390197,Agnico Eagle Mines,agnicoeagle.com`;
+
+
+const RAW_MET_WORKS_CSV = `Operation Group,Province / Territory,Operation,Operator / Owners,Facility,Product Group,Product,Latitude,Longitude,Unique identifier
+Smelters and refineries,Newfoundland and Labrador,Long Harbour,Vale Newfoundland and Labrador Limited,Refinery,Base metals,"Nickel, copper, cobalt",47.41094,-53.811792,https://vale.com/long-harbour
+Smelters and refineries,Quebec,Alouette,"Rio Tinto Aluminum Inc., Aluminium Austria Metall Québec Inc., Hydro Aluminium a.s., Société générale de financement du Québec and Marubeni Québec Inc.",Smelter,Aluminum,Aluminum (pure),50.1571,-66.4429,https://www.alouette.com/en
+Smelters and refineries,Quebec,Baie-Comeau,Alcoa Corporation,Smelter,Aluminum,Aluminum (pure or alloyed),49.2562,-68.1491,https://www.alcoa.com/canada/fr
+Smelters and refineries,Quebec,Grande-Baie,Rio Tinto Aluminum Inc.,Smelter,Aluminum,Aluminum (pure or alloyed),48.3058,-70.9258,https://www.riotinto.com/en/operations/canada/saguenay
+Smelters and refineries,Quebec,Laterrière,Rio Tinto Aluminum Inc.,Smelter,Aluminum,Aluminum (pure or alloyed),48.3013,-71.1287,https://www.riotinto.com/en/operations/canada/saguenay
+Smelters and refineries,Quebec,Vaudreuil,Rio Tinto Aluminum Inc.,Refinery,Aluminum,Alumina,48.42848,-71.157919,https://www.riotinto.com/en/operations/canada/saguenay
+Smelters and refineries,Quebec,Arvida,Rio Tinto Aluminum Inc.,Smelter,Aluminum,"Aluminum (pure or alloyed), alumina, aluminum chemicals, composites",48.43017,-71.165521,https://www.riotinto.com/en/operations/canada/saguenay
+Smelters and refineries,Quebec,Alma,Rio Tinto Aluminum Inc.,Smelter,Aluminum,Aluminum (pure or alloyed),48.5847,-71.6897,https://www.riotinto.com/en/operations/canada/saguenay
+Smelters and refineries,Quebec,Deschambault,Alcoa Corporation,Smelter,Aluminum,Aluminum (pure),46.6939,-71.9467,https://www.alcoa.com/canada/fr
+Smelters and refineries,Quebec,Bécancour,Alcoa Corporation and Rio Tinto Aluminum Inc.,Smelter,Aluminum,Aluminum (pure or alloyed),46.381,-72.3852,https://www.alcoa.com/canada/fr
+Smelters and refineries,Quebec,CCR,Glencore Canada Corporation,Refinery,Base metals,"Copper (cathodes), gold, silver, tellurium, selenium, nickel sulfate, copper sulfate, platinum group metals",45.62752,-73.511778,https://www.glencore.ca/en/ccr/
+Smelters and refineries,Quebec,Sainte-Catherine,Terrapure Environmental,"Refinery, secondary smelter",Base metals,Recycled lead,45.40237,-73.601869,https://terrapureenv.com/
+Smelters and refineries,Quebec,General Smelting Company of Canada,Glencore Canada Corporation,Secondary smelter,Base metals,Recycled lead,45.44852,-73.676345,https://www.glencore.ca/en/generalsmelting
+Smelters and refineries,Quebec,Canadian Electrolytic Zinc Limited (CEZinc),Glencore Canada Corporation,Refinery,Base metals,"Zinc, cadmium, liquid sulfur dioxide, sulfuric acid",45.22831,-74.097205,https://www.glencore.ca/en/cezinc
+Smelters and refineries,Quebec,Horne,Glencore Canada Corporation,Smelter,Base metals,"Copper anodes, precious metals, sulfuric acid",48.2534,-79.0151,https://www.glencore.ca/en/horne
+Smelters and refineries,Ontario,Ottawa,Royal Canadian Mint,Refinery,Precious metals,"Gold, silver",45.43133,-75.69922,https://www.mint.ca
+Smelters and refineries,Ontario,Port Hope,Cameco Corporation,Conversion facility,Uranium,"Uranium (hexafluoride, dioxide, metals, alloys)",43.9429,-78.2943,https://www.cameco.com/businesses/fuel-services/conversion-port-hope
+Smelters and refineries,Ontario,Port Colborne,Vale Canada Limited,Refinery,Base metals,"Electrolytic cobalt, platinum group metals (in residues), copper oxide",42.883,-79.24,https://www.vale.com/canada
+Smelters and refineries,Ontario,Mississauga,Terrapure Environmental,Secondary smelter,Base metals,Recycled lead,43.60506,-79.57979,https://terrapureenv.com/
+Smelters and refineries,Ontario,Mississauga,Real Alloy Canada Ltd.,Secondary smelter,Aluminum,Recycled  aluminum,43.7058,-79.6671,https://www.realalloy.com/
+Smelters and refineries,Ontario,Brampton,Asahi Refining Canada Ltd.,Refinery,Precious metals,"Gold, silver",43.69107,-79.722125,https://www.asahirefining.com/
+Smelters and refineries,Ontario,Sudbury,Glencore Canada Corporation,"Smelter, plant",Base metals,"Nickel-copper matte containing cobalt, gold, silver, platinum group metals",46.5763,-80.7993,https://www.glencore.ca/en/sudburyino
+Smelters and refineries,Ontario,Copper Cliff Complex ,Vale Canada Limited,"Smelter, refinery, plant",Base metals,"Nickel (oxide sinter, pellets, powder, sulfide), copper cathodes, gold, silver, selenium cake, tellurium dioxide cake, platinum group metals (in residues), liquid sulfur dioxide, sulfuric acid",46.4801,-81.0569,https://www.vale.com/canada
+Smelters and refineries,Ontario,Blind River,Cameco Corporation,Refinery,Uranium,Uranium (trioxide),46.1809,-83.017246,https://www.cameco.com/businesses/fuel-services/blind-river
+Smelters and refineries,Alberta,The Cobalt Refinery Company Inc.,Sherritt International Corporation and General Nickel Company S.A.,Refinery,Base metals,"Nickel, cobalt, copper sulfide, ammonium sulfate",53.71993,-113.19011,https://sherritt.com/
+Smelters and refineries,British Columbia,Trail,Teck Resources Limited,"Smelter, refinery, plant",Base metals,"Zinc, lead, bismuth, cadmium, indium, germanium, precious metals, liquid sulfur dioxide, sulfuric acid",49.0999,-117.7137,https://www.teck.com/operations/canada/trail-operations/
+Smelters and refineries,British Columbia,Richmond,Metalex Products Ltd.,Secondary smelter,Base metals,Recycled lead,49.1942,-123.092001,https://www.metalexproducts.com/
+Smelters and refineries,British Columbia,Kitimat,Rio Tinto Aluminum Inc.,Smelter,Aluminum,Aluminum (pure or alloyed),53.9976,-128.6954,https://www.riotinto.com/en/operations/canada/kitimat
+Steel Mills and Pellet Plants,Newfoundland and Labrador,Carol Lake,Iron Ore Company of Canada Inc.,Pelletizing plant,Iron and steel,"Iron ore pellets (direct reduction, blast furnace grades)",52.95872,-66.89277,https://www.ironore.ca/en/
+Steel Mills and Pellet Plants,Quebec,Port-Cartier,ArcelorMittal Mining Canada,Pelletizing plant,Iron and steel,"Iron ore pellets (direct reduction, blast furnace grades)",50.03213,-66.797531,https://corporate.arcelormittal.com/
+Steel Mills and Pellet Plants,Quebec,Sorel Forge,Swiss Steel Holding AG,Electric arc furnace,Iron and steel,Steel,46.04587,-73.124998,https://www.swisssteel-group.com/
+Steel Mills and Pellet Plants,Quebec,Rio Tinto Iron and Titanium,Rio Tinto Group,Electric arc furnace,Iron and steel,"Steel, titanium dioxide, scandium",46.04591,-73.138424,https://www.riotinto.com/en/operations/canada/sorel-tracy
+Steel Mills and Pellet Plants,Quebec,Contrecœur East,ArcelorMittal Long Products Canada,Electric arc furnace,Iron and steel,Steel,45.83772,-73.249081,https://longproducts.arcelormittal.com/
+Steel Mills and Pellet Plants,Quebec,Contrecœur West,ArcelorMittal Long Products Canada,Electric arc furnace,Iron and steel,Steel,45.81994,-73.263268,https://longproducts.arcelormittal.com/
+Steel Mills and Pellet Plants,Ontario,Ivaco Rolling Mills,"Heico Companies, LLC",Electric arc furnace,Iron and steel,Steel,45.6119,-74.704435,https://www.heicocompanies.com/
+Steel Mills and Pellet Plants,Ontario,Whitby Mill,Gerdau S.A.,Electric arc furnace,Iron and steel,Steel,43.86,-78.91,https://www2.gerdau.com/en
+Steel Mills and Pellet Plants,Ontario,Welland Mill,Valbruna ASW Inc.,Electric arc furnace,Iron and steel,Steel,42.99827,-79.235065,https://www.valbruna.com/
+Steel Mills and Pellet Plants,Ontario,ArcelorMittal Dofasco,ArcelorMittal S.A.,"Basic oxygen furnace, electric arc furnace",Iron and steel,Steel,43.26913,-79.805204,https://dofasco.arcelormittal.com/
+Steel Mills and Pellet Plants,Ontario,Hamilton Works,Stelco Inc.,Basic oxygen furnace,Iron and steel,Steel,43.275,-79.819,https://www.stelco.com/
+Steel Mills and Pellet Plants,Ontario,Lake Erie Works,Stelco Inc.,Basic oxygen furnace,Iron and steel,Steel,42.8001,-80.0937,https://www.stelco.com/
+Steel Mills and Pellet Plants,Ontario,Cambridge Mill,Gerdau S.A.,Electric arc furnace,Iron and steel,Steel,43.37,-80.28,https://www2.gerdau.com/en
+Steel Mills and Pellet Plants,Ontario,Algoma Steel,Algoma Steel Inc.,Basic oxygen furnace,Iron and steel,Steel,46.52055,-84.36664,https://www.algoma.com/
+Steel Mills and Pellet Plants,Manitoba,Manitoba Mill,Gerdau S.A.,Electric arc furnace,Iron and steel,Steel,50.13027,-96.893633,https://www2.gerdau.com/en
+Steel Mills and Pellet Plants,Saskatchewan,EVRAZ Regina,EVRAZ North America Inc.,Electric arc furnace,Iron and steel,Steel,50.51526,-104.623843,https://www.evrazna.com/
+Steel Mills and Pellet Plants,Alberta,AltaSteel,AltaSteel Inc.,Electric arc furnace,Iron and steel,Steel,53.49278,-113.387962,https://www.altasteel.com/
+Ferroalloy plants,Quebec,Elkem Chicoutimi,Elkem Metal Canada Inc.,Electric arc furnace,Ferroalloys,Ferrosilicon,48.41277,-71.131239,https://www.elkem.com/
+Ferroalloy plants,Quebec,Niobec Converter,Magris Performance Materials,N/A,Ferroalloys,Ferroniobium,48.53174,-71.158168,https://niobec.com/en/
+Ferroalloy plants,Quebec,Becancour Silicon,Ferroglobe PLC,Refinery,Ferroalloys,"Silicon metal, ferrosilicon",46.37,-72.39,https://www.ferroglobe.com/
+Ferroalloy plants,Ontario,Ottawa Plant,Masterloy Products Limited,N/A,Ferroalloys,"Ferrovanadium, ferromolybdenum",45.29804,-75.562391,https://www.masterloy.com/`;
+
+const RAW_NM_CSV = `Operation Group,Province / Territory,Operation,Operator / Owners,Facility,City,Product Group,Product,Latitude,Longitude,Unique identifier
+Nonmetal mines,Newfoundland and Labrador,Conception Bay South,Trinity Performance Minerals,Open-pit,Conception Bay South,Industrial minerals,Pyrophyllite,47.4892,-52.9544,5
+Nonmetal mines,Nova Scotia,Brierly Brook,Nova Construction Ltd.,Open-pit,Antigonish,Industrial minerals,Gypsum,45.5998,-62.06529,6
+Nonmetal mines,Nova Scotia,Brookfield,Lafarge Canada Inc.,"Open-pit, plant",Brookfield,Industrial minerals,Limestone,45.2399,-63.3352,7
+Nonmetal mines,Nova Scotia,East Milford,National Gypsum (Canada) Ltd.,Open-pit,Milford,Industrial minerals,Gypsum,45.0116,-63.4224,8
+Nonmetal mines,Nova Scotia,Pugwash,K+S Windsor Salt Ltd.,Underground,Pugwash,Industrial minerals,Salt,45.843819,-63.654914,9
+Nonmetal mines,Nova Scotia,Amherst (Nappan),Compass Minerals Canada Corporation,Solution mining,Amherst,Industrial minerals,Salt,45.7829,-64.2339,10
+Nonmetal mines,New Brunswick,Glenvale,Hammond River Holdings Ltd.,Open-pit,Three Rivers,Industrial minerals,Gypsum,45.935603,-65.221573,11
+Nonmetal mines,New Brunswick,"Havelock (Hicksville, Samp Hill, Springhill)",Graymont Inc.,"Open-pit, plant",Havelock,Industrial minerals,"Limestone, lime",45.997467,-65.304561,12
+Nonmetal mines,New Brunswick,Picadilly,Nutrien Ltd.,Underground,Sussex,Industrial minerals,Salt,45.7515,-65.4162,13
+Nonmetal mines,New Brunswick,Upham East,Hammond River Holdings Ltd.,Open-pit,Upham,Industrial minerals,Gypsum,45.48334,-65.63127,14
+Nonmetal mines,New Brunswick,Brookville,Brookville Manufacturing Company,"Open-pit, plant",Saint John,Industrial minerals,Dolomitic lime,45.3384,-66.0218,15
+Nonmetal mines,New Brunswick,Sormany,Elmtree Resources Ltd.,"Open-pit, plant",Sormany,Industrial minerals,Limestone,47.6511,-66.0403,16
+Nonmetal mines,Quebec,Seleine,Stone Canyon Industries Holding,Underground,Îles-de-la-Madeleine,Industrial minerals,Salt,47.6122,-61.5608,34
+Nonmetal mines,Quebec,McInnis,St Marys Cement,"Open-pit, plant",Port-Daniel–Gascons,Industrial minerals,Limestone,48.186869,-64.918672,35
+Nonmetal mines,Quebec,Saint-Modeste,Les Tourbières Berger Ltée.,Open-pit,Saint-Modeste,Industrial minerals,"Vermiculite, perlite",47.826516,-69.437899,36
+Nonmetal mines,Quebec,Quebec,Ciment Québec inc.,"Open-pit, plant",Québec City,Industrial minerals,Limestone,46.858244,-71.202981,37
+Nonmetal mines,Quebec,Marbleton,Graymont Inc.,"Open-pit, plant",Marbleton ,Industrial minerals,"Limestone, lime",45.6193,-71.6075,38
+Nonmetal mines,Quebec,Saint-Basile,Ciment Québec inc.,"Open-pit, plant",Saint-Basile,Industrial minerals,Limestone,46.74491,-71.815131,39
+Nonmetal mines,Quebec,Les Carrières Calco,Graymont Inc.,"Open-pit, plant",St-Marc-des-Carrières,Industrial minerals,Calcium carbonate,46.677342,-72.053428,40
+Nonmetal mines,Quebec,Acton Vale,Carrière d’Acton Vale Ltée,"Open-pit, plant",Acton Vale,Industrial minerals,Calcium carbonate,45.642046,-72.555113,41
+Nonmetal mines,Quebec,Bedford,Graymont Inc.,"Open-pit, plant",Bedford,Industrial minerals,"Limestone, lime",45.1127,-73.0118,42
+Nonmetal mines,Quebec,Saint-Armand,OMYA (Canada) Inc.,"Open-pit, plant",Saint-Armand,Industrial minerals,Calcium carbonate,45.0762,-73.0452,43
+Nonmetal mines,Quebec,Joliette,Béton Provincial,"Open-pit, plant",Joliette,Industrial minerals,Limestone,46.0303,-73.40276,44
+Nonmetal mines,Quebec,Saint-Constant,Lafarge Canada Inc.,"Open-pit, plant",Saint-Constant,Industrial minerals,Limestone,45.343972,-73.524931,45
+Nonmetal mines,Quebec,Laval,Demix Agrégats,"Open-pit, plant",Laval,Industrial minerals,Limestone,45.588917,-73.701347,46
+Nonmetal mines,Quebec,Laval,Ciment Québec inc.,"Open-pit, plant",Laval,Industrial minerals,Limestone,45.593093,-73.704046,47
+Nonmetal mines,Quebec,Lac-des-Îles,Northern Graphite Corporation,"Open-pit, plant",Saint-Aimé-du-Lac-des-Îles,Industrial minerals,Graphite,46.3753,-75.5357,48
+Nonmetal mines,Ontario,St. Lawrence,Canadian Wollastonite,Open-pit,Kingston,Industrial minerals,Wollastonite,44.462618,-76.246541,79
+Nonmetal mines,Ontario,Tatlock,OMYA (Canada) Inc.,Open-pit,Tatlock,Industrial minerals,Calcium carbonate,45.151,-76.4957,80
+Nonmetal mines,Ontario,Bath,Lafarge Canada Inc.,Open-pit,Bath,Industrial minerals,Limestone,44.17086,-76.809138,81
+Nonmetal mines,Ontario,Picton,Heidelberg Materials,Open-pit,Picton,Industrial minerals,Limestone,44.052965,-77.122714,82
+Nonmetal mines,Ontario,Ogden Point,CRH Canada Group Inc.,Open-pit,Ogden Point,Industrial minerals,Limestone,43.9831,-77.8806,83
+Nonmetal mines,Ontario,Blue Mountain,Covia Canada Ltd.,"Open-pit, plant",Blue Mountain ,Industrial minerals,Nepheline syenite,44.6775,-77.9491,84
+Nonmetal mines,Ontario,Bowmanville,St Marys CBM (Canada) Inc.,Open-pit,Bowmanville ,Industrial minerals,Limestone,43.8845,-78.6946,85
+Nonmetal mines,Ontario,Dundas,Carmeuse Lime (Canada) Limited,Open-pit,Dundas,Industrial minerals,Dolomitic lime,43.291782,-79.986394,86
+Nonmetal mines,Ontario,Dundas,Lafarge Canada Inc.,Open-pit,Dundas,Industrial minerals,Limestone,43.291518,-80.008396,87
+Nonmetal mines,Ontario,Hagersville,CGC Inc.,"Underground, plant",Hagersville,Industrial minerals,Gypsum,43.012203,-80.016869,88
+Nonmetal mines,Ontario,Beachville,Carmeuse Americas,"Open-pit, plant",Ingersoll,Industrial minerals,"Limestone, lime",43.068367,-80.856803,89
+Nonmetal mines,Ontario,Sydenham,E.C. King Contracting Ltd. (Miller Paving Co.),Open-pit,Owen Sound,Industrial minerals,Dolomite,44.5669,-80.8607,90
+Nonmetal mines,Ontario,Owen Sound,Owen Sound Ledgerock Ltd.,Open-pit,Owen Sound,Industrial minerals,Dolomite,44.5899,-81.0456,91
+Nonmetal mines,Ontario,St Marys,St Marys CBM (Canada) Inc.,Open-pit,St. Marys,Industrial minerals,Limestone,43.2483,-81.1588,92
+Nonmetal mines,Ontario,Spanish River Carbonite,Boreal Agrominerals Inc.,Open-pit,northwest of Sudbury,Industrial minerals,Vermiculite,46.6268,-81.7246,93
+Nonmetal mines,Ontario,Goderich,Compass Minerals Canada Corporation,"Underground, plant",Goderich,Industrial minerals,Salt,43.743733,-81.724754,94
+Nonmetal mines,Ontario,Goderich,Compass Minerals Canada Corporation,Solution mining,Goderich,Industrial minerals,Salt,43.746875,-81.72825,95
+Nonmetal mines,Ontario,Penhorwood,Magris Talc Canada Inc.,Open-pit,Penhorwood,Industrial minerals,Talc,48.191813,-82.09848,96
+Nonmetal mines,Ontario,Northern Operation ,Carmeuse Lime (Canada) Limited,Open-pit,Blind River,Industrial minerals,Limestone,46.1989,-82.6997,97
+Nonmetal mines,Ontario,Windsor,K+S Windsor Salt Ltd.,Solution mining,Windsor,Industrial minerals,Salt,42.287093,-83.091963,98
+Nonmetal mines,Ontario,Ojibway,K+S Windsor Salt Ltd.,Underground,Windsor,Industrial minerals,Salt,42.2558,-83.1033,99
+Nonmetal mines,Ontario,Meldrum Bay,Lafarge Canada Inc.,"Open-pit, plant",Manitoulin Island,Industrial minerals,"Limestone, dolomite",45.909662,-83.220727,100
+Nonmetal mines,Manitoba,Faulkner,Graymont Inc.,"Open-pit, plant",Faulkner,Industrial minerals,"Limestone, lime",51.413229,-98.765438,107
+Nonmetal mines,Manitoba,Amaranth,Heidelberg Materials,"Open-pit, plant",Alonsa,Industrial minerals,Gypsum,50.63478,-98.8779,108
+Nonmetal mines,Manitoba,Hargrave,ERCO Worldwide,"Underground, plant",Virden,Industrial minerals,Sodium chlorate,49.903195,-101.047401,109
+Nonmetal mines,Saskatchewan,Rocanville,Nutrien Ltd.,"Underground, plant",Rocanville,Industrial minerals,Potash,50.471916,-101.544281,116
+Nonmetal mines,Saskatchewan,Esterhazy (K-3),The Mosaic Company,"Underground, plant",Esterhazy,Industrial minerals,"Potash, salt",50.659914,-101.845218,117
+Nonmetal mines,Saskatchewan,Wynyard (Big Quill),Compass Minerals Canada Corporation,Plant,Wynyard,Industrial minerals,Potassium sulphate,51.780628,-104.319916,118
+Nonmetal mines,Saskatchewan,Belle Plaine,The Mosaic Company,"Solution mining, plant",Belle Plaine ,Industrial minerals,"Potash, salt",50.435626,-105.181423,119
+Nonmetal mines,Saskatchewan,Lanigan,Nutrien Ltd.,Underground,Lanigan,Industrial minerals,Potash,51.853044,-105.205794,120
+Nonmetal mines,Saskatchewan,Bethune,K+S Potash Canada,"Solution mining, plant",Bethune,Industrial minerals,Potash,50.62917,-105.26167,121
+Nonmetal mines,Saskatchewan,Allan,Nutrien Ltd.,"Underground, plant",Allan,Industrial minerals,Potash,51.93062,-106.068974,122
+Nonmetal mines,Saskatchewan,Patience Lake,Nutrien Ltd.,"Underground, plant",Blucher,Industrial minerals,Potash,52.089362,-106.376992,123
+Nonmetal mines,Saskatchewan,Saskatoon facility,ERCO Worldwide,"Solution mining, plant",Saskatoon,Industrial minerals,Salt,52.2015,-106.6204,124
+Nonmetal mines,Saskatchewan,Chaplin Lake,Saskatchewan Mining and Minerals Inc.,"Open-pit, plant",Chaplin,Industrial minerals,Sodium sulphate ,50.4573,-106.67,125
+Nonmetal mines,Saskatchewan,Cory,Nutrien Ltd.,"Underground, plant",Cory,Industrial minerals,Potash,52.092027,-106.859358,126
+Nonmetal mines,Saskatchewan,Vanscoy,Nutrien Ltd.,"Underground, plant",Vanscoy,Industrial minerals,"Potash, salt",52.01,-107.08,127
+Nonmetal mines,Saskatchewan,Unity,Compass Minerals Canada Corporation,Solution mining,Unity,Industrial minerals,Salt,52.4233,-109.11,128
+Nonmetal mines,Alberta,Hammerstone Quarry,BURNCO Rock Products Ltd.,Open-pit,Fort McMurray,Industrial minerals,Limestone,56.9026,-111.3773,131
+Nonmetal mines,Alberta,Fort McMurray West,Suncor Energy Inc.,Open-pit,Fort McMurray,Industrial minerals,Limestone,57.0218,-111.572,132
+Nonmetal mines,Alberta,Calling Lake,Ward Chemical,Solution mining,Calling Lake,Industrial minerals,Salt,55.17424,-113.219797,133
+Nonmetal mines,Alberta,Mitsue,Tiger Calcium Services Inc.,Solution mining,Slave Lake,Industrial minerals,Salt,55.272969,-114.598617,134
+Nonmetal mines,Alberta,Exshaw (Gap),Graymont Inc.,"Open-pit, plant",Exshaw,Industrial minerals,"Limestone, lime",51.069153,-115.135047,135
+Nonmetal mines,Alberta,Exshaw,Lafarge Canada Inc.,"Open-pit, plant",Exshaw,Industrial minerals,Limestone ,51.059442,-115.171606,136
+Nonmetal mines,Alberta,Clearwater,BURNCO Rock Products Ltd.,"Open-pit, plant",Clearwater River,Industrial minerals,Limestone ,51.9653,-115.2875,137
+Nonmetal mines,Alberta,McLeod,Lehigh Hanson,Open-pit,Cadomin,Industrial minerals,Limestone,53.010212,-117.298804,138
+Nonmetal mines,British Columbia,Mount Brussilof,Baymag Inc.,Open-pit,Mount Brussilof,Industrial minerals,"Magnesite (fused), magnesia (products)",50.7887,-115.683,160
+Nonmetal mines,British Columbia,Kootenay West,CertainTeed Gypsum Canada Inc.,Open-pit,Canal Flats,Industrial minerals,Gypsum,50.2249,-115.7199,161
+Nonmetal mines,British Columbia,Falkland,Lafarge Canada Inc.,"Open-pit, plant",Falkland,Industrial minerals,Gypsum,50.510392,-119.552465,162
+Nonmetal mines,British Columbia,Bud,Progressive Planet Solutions Inc.,Open-pit,Princeton,Industrial minerals,"Zeolite, calcium bentonite clay",49.424529,-120.557564,163
+Nonmetal mines,British Columbia,Red Lake,Progressive Planet Solutions Inc.,Open-pit,Kamloops,Industrial minerals,"Diatomite, bentonite, leonardite",50.9387,-120.815,164
+Nonmetal mines,British Columbia,Imperial Limestone,Imperial Limestone Co. Ltd.,Open-pit,Texada Island,Industrial minerals,Limestone,49.7405,-124.528,165
+Nonmetal mines,British Columbia,Texada,Texada Quarrying Ltd. (Lafarge Canada Inc.),Open-pit,Texada Island,Industrial minerals,Limestone,49.718975,-124.568565,166
+Nonmetal mines,British Columbia,Fireside,Fireside Minerals Ltd.,Open-pit,Fireside,Industrial minerals,Barite,59.770475,-127.206197,167`;
+
+const RAW_OILSANDS_CSV = `Operation Group,Province / Territory,Operation,Operator / Owners,Facility,City,Product Group,Product,Latitude,Longitude,Unique identifier
+Oil sands mine,Alberta,Kearl,Imperial Oil Ltd.,Open-pit,Fort McMurray,Oil,Upgraded crude oil,57.396911,-111.066731,143
+Oil sands mine,Alberta,Millennium and Steepbank,Suncor Energy Inc.,Open-pit,Fort McMurray,Oil,Upgraded crude oil,56.8719,-111.34,144
+Oil sands mine,Alberta,Jackpine,Canadian Natural Resources Limited,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57.24903611,-111.3798556,145
+Oil sands mine,Alberta,Aurora North and South,Syncrude Canada Ltd.,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57.3134,-111.458,146
+Oil sands mine,Alberta,Mildred Lake,Syncrude Canada Ltd.,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57,-111.4667,147
+Oil sands mine,Alberta,Muskeg River,Canadian Natural Resources Limited,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57.2465,-111.512,148
+Oil sands mine,Alberta,Fort Hills,Suncor Energy Inc.,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57.3952,-111.572,149
+Oil sands mine,Alberta,Horizon,Canadian Natural Resources Limited,Open-pit,Fort MacKay,Oil,Upgraded crude oil,57.33823333,-111.7749472,150`;
+
+const RAW_COAL_CSV = `Operation Group,Province / Territory,Operation,Operator / Owners,Facility,City,Product Group,Product,Latitude,Longitude,Unique identifier
+Coal mines,Saskatchewan,Estevan,Westmoreland Coal Company,Open-pit,Bienfait,Coal,Coal (thermal),49.087329,-102.864956,129
+Coal mines,Saskatchewan,Poplar River,Westmoreland Coal Company,Open-pit,Coronach,Coal,Coal (thermal),49.217566,-105.472585,130
+Coal mines,Alberta,Genesee,Westmoreland Coal Company,Open-pit,Genesee,Coal,Coal (thermal),53.323876,-114.267236,139
+Coal mines,Alberta,Coal Valley,Westmoreland Coal Company,Open-pit,Edson,Coal,Coal (thermal),53.072796,-116.786616,140
+Coal mines,Alberta,Vista,Coalspur Mines Limited,Open-pit,Hinton,Coal,Coal (thermal),53.403506,-117.36642,141
+Coal mines,Alberta,Grande Cache,CST Canada Coal Limited,Open-pit underground,Grande Cache,Coal,Coal (metallurgical),54.0333,-119.1667,142
+Coal mines,British Columbia,Line Creek,Glencore Canada Corporation,Open-pit,Sparwood,Coal,Coal (metallurgical thermal),49.95,-114.7833,168
+Coal mines,British Columbia,Elkview,Glencore Canada Corporation,Open-pit,Sparwood,Coal,Coal (metallurgical),49.7431,-114.805,169
+Coal mines,British Columbia,Fording River,Glencore Canada Corporation,Open-pit,Elkford,Coal,Coal (metallurgical),50.19817,-114.830862,170
+Coal mines,British Columbia,Greenhills,Glencore Canada Corporation,Open-pit,Sparwood,Coal,Coal (metallurgical),50.117858,-114.877193,171
+Coal mines,British Columbia,Quintette,Conuma Coal Resources Ltd.,Open-pit,Tumbler Ridge,Coal,Coal (metallurgical),55.0138,-121.1126,172
+Coal mines,British Columbia,Wolverine,Conuma Coal Resources Ltd.,Open-pit plant,Tumbler Ridge,Coal,Coal (metallurgical),55.0861,-121.2453,173
+Coal mines,British Columbia,Brule,Conuma Coal Resources Ltd.,Open-pit,Tumbler Ridge,Coal,Coal (metallurgical),55.398,-121.832,174
+Coal mines,British Columbia,Willow Creek,Conuma Coal Resources Ltd.,Open-pit,Chetwynd,Coal,Coal (metallurgical),55.607,-122.2222,175`;
+
+// ─── CSV Parser (handles quoted fields) ───
+
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+function parseCSVLine(line) {
+  const result = []; let current = ''; let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQuotes = !inQuotes; }
+    else if (c === ',' && !inQuotes) { result.push(current); current = ''; }
+    else { current += c; }
+  }
+  result.push(current);
+  return result;
+}
+
+// Parse both datasets
+const metalMinesRaw = parseCSV(RAW_CSV);
+const critMinesRaw = parseCSV(RAW_CM_CSV);
+const explorRaw = parseCSV(RAW_EXPLOR_CSV);
+const metWorksRaw = parseCSV(RAW_MET_WORKS_CSV);
+const nonMetalRaw = parseCSV(RAW_NM_CSV);
+const oilSandsRaw = parseCSV(RAW_OILSANDS_CSV);
+const coalRaw = parseCSV(RAW_COAL_CSV);
+
+// Normalize metal mines
+const metalMines = metalMinesRaw.map(d => ({
+  dataset: 'Metal Mines',
+  name: d['Operation'],
+  operator: d['Operator / Owners'],
+  province: d['Province / Territory'],
+  product: d['Product'],
+  productGroup: d['Product Group'],
+  facility: d['Facility'],
+  city: d['City'],
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'MM-' + d['Unique identifier'],
+  status: 'Active',
+  devStage: 'Mine',
+  website: ''
+}));
+
+// Normalize critical minerals
+const critMines = critMinesRaw.map(d => {
+  const isProject = d['Operation Group'] === 'Project';
+  const isProcessing = d['Operation Group'] === 'Processing';
+  return {
+    dataset: isProcessing ? 'CM Processing Facilities' : isProject ? 'CM Advanced Projects' : 'Critical Minerals (CM)',
+    name: d['Property Name'],
+    operator: d['Operator Owners'],
+    province: d['Province/Territory'],
+    product: d['Commodities'],
+    productGroup: isProcessing ? 'Processing' : 'Critical Minerals (CM)',
+    facility: d['Development Stage'],
+    city: '',
+    lat: d['Latitude'],
+    lng: d['Longitude'],
+    uid: (isProcessing ? 'PF-' : 'CM-') + d['Unique identifier'],
+    status: d['Activity Status'],
+    devStage: d['Development Stage'],
+    website: d['Website']
+  };
+});
+
+// Normalize exploration projects
+const explorMines = explorRaw.map(d => ({
+  dataset: 'Exploration Projects',
+  name: d['Project Name'],
+  operator: d['Company'] || 'N/A',
+  province: d['Province / Territory'],
+  product: d['Commodity Group'],
+  productGroup: 'Exploration',
+  facility: 'Exploration project',
+  city: '',
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'EX-' + d['#'],
+  status: 'Active',
+  devStage: 'Exploration',
+  website: (d['Website'] && d['Website'] !== 'N/A') ? 'https://' + d['Website'] : '',
+  rank: parseInt(d['#'])
+}));
+
+// Normalize metallurgical works
+const metWorks = metWorksRaw.map((d, i) => ({
+  dataset: 'Metallurgical Works',
+  name: d['Operation'],
+  operator: d['Operator / Owners'],
+  province: d['Province / Territory'],
+  product: d['Product'],
+  productGroup: d['Product Group'],
+  facility: d['Facility'],
+  city: '',
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'MW-' + i,
+  status: 'Active',
+  devStage: d['Operation Group'],
+  website: d['Unique identifier'] || '',
+  operationGroup: d['Operation Group']
+}));
+
+// Normalize non-metal mines
+const nonMetalMines = nonMetalRaw.map(d => ({
+  dataset: 'Non-Metal Mines',
+  name: d['Operation'],
+  operator: d['Operator / Owners'],
+  province: d['Province / Territory'],
+  product: d['Product'],
+  productGroup: d['Product Group'],
+  facility: d['Facility'],
+  city: d['City'],
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'NM-' + d['Unique identifier'],
+  status: 'Active',
+  devStage: 'Mine',
+  website: ''
+}));
+
+// Normalize oil sands mines
+const oilSandsMines = oilSandsRaw.map(d => ({
+  dataset: 'Oil Sands Mines',
+  name: d['Operation'],
+  operator: d['Operator / Owners'],
+  province: d['Province / Territory'],
+  product: d['Product'],
+  productGroup: d['Product Group'],
+  facility: d['Facility'],
+  city: d['City'],
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'OS-' + d['Unique identifier'],
+  status: 'Active',
+  devStage: 'Mine',
+  website: ''
+}));
+
+// Normalize coal mines
+const coalMines = coalRaw.map(d => ({
+  dataset: 'Coal Mines',
+  name: d['Operation'],
+  operator: d['Operator / Owners'],
+  province: d['Province / Territory'],
+  product: d['Product'],
+  productGroup: d['Product Group'],
+  facility: d['Facility'],
+  city: d['City'],
+  lat: d['Latitude'],
+  lng: d['Longitude'],
+  uid: 'CL-' + d['Unique identifier'],
+  status: 'Active',
+  devStage: 'Mine',
+  website: ''
+}));
+
+// Merged dataset
+const mineData = [...metalMines, ...critMines, ...explorMines, ...metWorks, ...nonMetalMines, ...oilSandsMines, ...coalMines];
+
+// ─── Color Scheme ───
+const productColors = {
+  'Iron ore':                       '#c9510c',
+  'Base metals':                    '#3fb950',
+  'Precious metals':                '#f5c542',
+  'Uranium':                        '#58a6ff',
+  'Other metals':                   '#bc8cff',
+  'Base metals and precious metals':'#ff7b72',
+  'Precious metals and Base metals':'#ff7b72',
+  'Critical Minerals (CM)':              '#00d4aa',
+  'Exploration':                    '#e040fb',
+  'Aluminum':                       '#4fc3f7',
+  'Iron and steel':                 '#ff8a65',
+  'Ferroalloys':                    '#ce93d8',
+  'Processing':                     '#ffd54f',
+  'Industrial minerals':            '#228B22',
+  'Oil':                            '#1a1a1a',
+  'Coal':                           '#4a4a4a',
+};
+function getColor(pg) { return productColors[pg] || '#8b949e'; }
+
+// ─── Build unique filter sets ───
+const datasets = ['Metal Mines', 'Non-Metal Mines', 'Oil Sands Mines', 'Coal Mines', 'Critical Minerals (CM)', 'CM Advanced Projects', 'CM Processing Facilities', 'Exploration Projects', 'Metallurgical Works'];
+const statuses = [...new Set(mineData.map(d => d.status))].sort();
+const provinces = [...new Set(mineData.map(d => d.province))].sort();
+const productGroups = [...new Set(mineData.map(d => d.productGroup))].sort();
+const facilityTypes = ['Open-pit', 'Underground', 'Concentrator', 'Mine', 'Past producer', 'Well(s) and/or plant', 'Advanced project', 'Advanced processing project', 'Advanced unconventional project', 'Demonstration plant', 'Battery recycling facility', 'Exploration project', 'Smelter', 'Refinery', 'Secondary smelter', 'Secondary refinery', 'Electric arc furnace', 'Basic oxygen furnace', 'Pelletizing plant', 'Conversion facility', 'Ferroalloy plant', 'Plant', 'Solution mining', 'N/A'];
+
+// ─── Active filter state ───
+const activeDatasets = new Set(datasets);
+const activeStatuses = new Set(statuses);
+const activeProvinces = new Set(provinces);
+const activeProducts = new Set(productGroups);
+const activeFacilities = new Set(facilityTypes);
+
+// ─── Map Setup ───
+const map = L.map('map', {
+  center: [58, -96],
+  zoom: 4,
+  zoomControl: false,
+  attributionControl: true,
+  maxBounds: [[5, -170], [85, -13]],
+  maxBoundsViscosity: 0.8,
+  minZoom: 3
+});
+
+L.control.zoom({ position: 'topright' }).addTo(map);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 18
+}).addTo(map);
+
+// ─── Markers Layer ───
+const markersLayer = L.layerGroup().addTo(map);
+const markerMap = new Map();
+
+function createMarkerIcon(color, isCritical, isExploration, isMetallurgical, isProcessing, isNonMetal, isOilSands) {
+  if (isOilSands) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="oil-marker" style="--glow:#D4A017;"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+      popupAnchor: [0, -10]
+    });
+  }
+  if (isNonMetal) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="nm-marker" style="background:${color};--glow:${color};"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8]
+    });
+  }
+  if (isProcessing) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="proc-marker" style="background:${color};--glow:${color};"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8]
+    });
+  }
+  if (isMetallurgical) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="met-marker" style="background:${color};--glow:${color};"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+      popupAnchor: [0, -8]
+    });
+  }
+  if (isExploration) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="explor-marker" style="border-bottom-color:${color};--glow:${color};"></div>`,
+      iconSize: [14, 12],
+      iconAnchor: [7, 12],
+      popupAnchor: [0, -12]
+    });
+  }
+  if (isCritical) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="cm-marker" style="background:${color};--glow:${color};"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+      popupAnchor: [0, -8]
+    });
+  }
+  return L.divIcon({
+    className: '',
+    html: `<div class="mine-marker" style="width:14px;height:14px;background:${color};--glow:${color};"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -10]
+  });
+}
+
+function buildPopup(d) {
+  const color = getColor(d.productGroup);
+  const products = d.product.split(',').map(p => p.trim());
+  const productTags = products.map(p =>
+    `<span class="pop-product-tag" style="background:${color}22;color:${color};border:1px solid ${color}44;">${p}</span>`
+  ).join('');
+
+  let rows = '';
+  rows += `<div class="pop-row"><span class="pop-label">Province</span><span class="pop-value">${d.province}</span></div>`;
+  if (d.city) rows += `<div class="pop-row"><span class="pop-label">City</span><span class="pop-value">${d.city}</span></div>`;
+  if (d.dataset === 'Critical Minerals (CM)') {
+    rows += `<div class="pop-row"><span class="pop-label">Dev. Stage</span><span class="pop-value">${d.devStage}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Status</span><span class="pop-value">${d.status}</span></div>`;
+  } else if (d.dataset === 'CM Advanced Projects') {
+    rows += `<div class="pop-row"><span class="pop-label">Dev. Stage</span><span class="pop-value">${d.devStage}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Status</span><span class="pop-value">${d.status}</span></div>`;
+  } else if (d.dataset === 'CM Processing Facilities') {
+    rows += `<div class="pop-row"><span class="pop-label">Facility</span><span class="pop-value">${d.facility}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Status</span><span class="pop-value">${d.status}</span></div>`;
+  } else if (d.dataset === 'Exploration Projects') {
+    rows += `<div class="pop-row"><span class="pop-label">Stage</span><span class="pop-value">Exploration</span></div>`;
+  } else if (d.dataset === 'Metallurgical Works') {
+    rows += `<div class="pop-row"><span class="pop-label">Facility</span><span class="pop-value">${d.facility}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Type</span><span class="pop-value">${d.operationGroup || d.devStage}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Product Group</span><span class="pop-value" style="color:${color}">${d.productGroup}</span></div>`;
+  } else {
+    rows += `<div class="pop-row"><span class="pop-label">Facility</span><span class="pop-value">${d.facility}</span></div>`;
+    rows += `<div class="pop-row"><span class="pop-label">Product Group</span><span class="pop-value" style="color:${color}">${d.productGroup}</span></div>`;
+  }
+
+  const datasetBadge = d.dataset === 'Critical Minerals (CM)'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#00d4aa22;color:#00d4aa;border:1px solid #00d4aa44;margin-bottom:6px;font-weight:600;">◆ Critical Minerals (CM)</span>`
+    : d.dataset === 'CM Advanced Projects'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#58a6ff22;color:#58a6ff;border:1px solid #58a6ff44;margin-bottom:6px;font-weight:600;">◆ Advanced Project</span>`
+    : d.dataset === 'Exploration Projects'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#e040fb22;color:#e040fb;border:1px solid #e040fb44;margin-bottom:6px;font-weight:600;">▲ Exploration Project</span>`
+    : d.dataset === 'Metallurgical Works'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#ff6b9d22;color:#ff6b9d;border:1px solid #ff6b9d44;margin-bottom:6px;font-weight:600;">■ Metallurgical Works</span>`
+    : d.dataset === 'CM Processing Facilities'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#ffd54f22;color:#ffd54f;border:1px solid #ffd54f44;margin-bottom:6px;font-weight:600;">⬡ CM Processing Facility</span>`
+    : d.dataset === 'Non-Metal Mines'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#228B2222;color:#228B22;border:1px solid #228B2244;margin-bottom:6px;font-weight:600;">⬠ Non-Metal Mine</span>`
+    : d.dataset === 'Oil Sands Mines'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#D4A01722;color:#D4A017;border:1px solid #D4A01744;margin-bottom:6px;font-weight:600;">■ Oil Sands Mine</span>`
+    : d.dataset === 'Coal Mines'
+    ? `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:#4a4a4a22;color:#8a8a8a;border:1px solid #4a4a4a44;margin-bottom:6px;font-weight:600;">● Coal Mine</span>`
+    : `<span style="display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}44;margin-bottom:6px;font-weight:600;">● Metal Mine</span>`;
+
+  let websiteRow = '';
+  if (d.website && d.website !== 'Not available/Pas disponible') {
+    websiteRow = `<div class="pop-row"><span class="pop-label">Website</span><span class="pop-value"><a href="${d.website}" target="_blank" style="color:var(--accent);text-decoration:none;">Visit ↗</a></span></div>`;
+  }
+
+  return `<div class="popup-inner">
+    ${datasetBadge}
+    <div class="pop-name">${d.name}</div>
+    <div class="pop-operator">${d.operator}</div>
+    ${rows}
+    <div class="pop-row" style="flex-wrap:wrap;"><span class="pop-label" style="width:100%;margin-bottom:4px;">Products</span><div>${productTags}</div></div>
+    ${websiteRow}
+    <div class="pop-coords">📍 ${parseFloat(d.lat).toFixed(5)}°N, ${Math.abs(parseFloat(d.lng)).toFixed(5)}°W</div>
+  </div>`;
+}
+
+// Build all markers
+mineData.forEach(d => {
+  const lat = parseFloat(d.lat);
+  const lng = parseFloat(d.lng);
+  if (isNaN(lat) || isNaN(lng)) return;
+  let color = d.dataset === 'CM Advanced Projects' ? '#58a6ff' : d.dataset === 'Exploration Projects' ? '#e040fb' : d.dataset === 'CM Processing Facilities' ? '#ffd54f' : getColor(d.productGroup);
+  if (d.status === 'On hold / suspended') color = '#e53935';
+  const isCritical = d.dataset === 'Critical Minerals (CM)' || d.dataset === 'CM Advanced Projects';
+  const isExploration = d.dataset === 'Exploration Projects';
+  const isMetallurgical = d.dataset === 'Metallurgical Works';
+  const isProcessing = d.dataset === 'CM Processing Facilities';
+  const isNonMetal = d.dataset === 'Non-Metal Mines';
+  const isOilSands = d.dataset === 'Oil Sands Mines';
+  const marker = L.marker([lat, lng], { icon: createMarkerIcon(color, isCritical, isExploration, isMetallurgical, isProcessing, isNonMetal, isOilSands) })
+    .bindPopup(buildPopup(d), { maxWidth: 320 });
+  markerMap.set(d.uid, { marker, data: d });
+});
+
+// ─── Build Filter UI ───
+// ─── Cascading Filter Helpers ───
+// Returns items matching all active filters EXCEPT the specified dimension
+function getContextualData(excludeDimension) {
+  const searchTerm = document.getElementById('search').value.toLowerCase();
+  return mineData.filter(d => {
+    if (excludeDimension !== 'dataset' && !activeDatasets.has(d.dataset)) return false;
+    if (excludeDimension !== 'status' && !activeStatuses.has(d.status)) return false;
+    if (excludeDimension !== 'province' && !activeProvinces.has(d.province)) return false;
+    if (excludeDimension !== 'product' && !activeProducts.has(d.productGroup)) return false;
+    if (excludeDimension !== 'facility') {
+      const facTypes = d.facility.toLowerCase();
+      if (![...activeFacilities].some(f => facTypes.includes(f.toLowerCase()))) return false;
+    }
+    if (searchTerm) {
+      if (!d.name.toLowerCase().includes(searchTerm) &&
+          !d.operator.toLowerCase().includes(searchTerm) &&
+          !(d.city && d.city.toLowerCase().includes(searchTerm)) &&
+          !d.product.toLowerCase().includes(searchTerm) &&
+          !d.province.toLowerCase().includes(searchTerm)) return false;
+    }
+    return true;
+  });
+}
+
+function buildFilterButtons(containerId, items, activeSet, colorFn, contextualCounts) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  items.forEach(item => {
+    const count = contextualCounts ? (contextualCounts.get(item) || 0) : mineData.length;
+
+    if (containerId === 'fo-facility') {
+      const label = document.createElement('label');
+      label.className = 'facility-cb' + (count === 0 ? ' dimmed' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = activeSet.has(item);
+      cb.addEventListener('change', () => {
+        if (cb.checked) activeSet.add(item);
+        else activeSet.delete(item);
+        applyFilters();
+      });
+      label.appendChild(cb);
+      const textSpan = document.createElement('span');
+      textSpan.textContent = item;
+      label.appendChild(textSpan);
+      const countSpan = document.createElement('span');
+      countSpan.className = 'count';
+      countSpan.style.cssText = 'margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);opacity:0.6;';
+      countSpan.textContent = count;
+      label.appendChild(countSpan);
+      container.appendChild(label);
+    } else {
+      const btn = document.createElement('button');
+      const isActive = activeSet.has(item);
+      btn.className = 'filter-btn' + (isActive ? ' active' : '') + (count === 0 ? ' dimmed' : '');
+      const dotColor = colorFn ? colorFn(item) : 'var(--accent)';
+      btn.innerHTML = `<span class="dot" style="${isActive ? 'background:' + dotColor + ';' : 'border-color:' + dotColor + ';'}"></span>
+        <span>${item}</span>
+        <span class="count">${count}</span>`;
+      btn.addEventListener('click', () => {
+        if (activeSet.has(item)) activeSet.delete(item);
+        else activeSet.add(item);
+        btn.classList.toggle('active');
+        const dot = btn.querySelector('.dot');
+        if (activeSet.has(item)) { dot.style.background = dotColor; dot.style.borderColor = 'transparent'; }
+        else { dot.style.background = ''; dot.style.borderColor = dotColor; }
+        applyFilters();
+      });
+      container.appendChild(btn);
+    }
+  });
+}
+
+// Compute contextual counts for a dimension based on data filtered by all OTHER dimensions
+function computeContextualCounts(dimension, allOptions, contextualData) {
+  const counts = new Map();
+  allOptions.forEach(opt => counts.set(opt, 0));
+  contextualData.forEach(d => {
+    let val;
+    if (dimension === 'dataset') val = d.dataset;
+    else if (dimension === 'status') val = d.status;
+    else if (dimension === 'province') val = d.province;
+    else if (dimension === 'product') val = d.productGroup;
+    else if (dimension === 'facility') {
+      // facility is multi-valued, check each option
+      allOptions.forEach(opt => {
+        if (d.facility.toLowerCase().includes(opt.toLowerCase())) {
+          counts.set(opt, (counts.get(opt) || 0) + 1);
+        }
+      });
+      return;
+    }
+    if (val !== undefined) counts.set(val, (counts.get(val) || 0) + 1);
+  });
+  return counts;
+}
+
+function updateCascadingFilters() {
+  // For each filter dimension, get data filtered by all OTHER active filters
+  const dsCtx = getContextualData('dataset');
+  const stCtx = getContextualData('status');
+  const prCtx = getContextualData('province');
+  const pdCtx = getContextualData('product');
+  const fcCtx = getContextualData('facility');
+
+  const dsCounts = computeContextualCounts('dataset', datasets, dsCtx);
+  const stCounts = computeContextualCounts('status', statuses, stCtx);
+  const prCounts = computeContextualCounts('province', provinces, prCtx);
+  const pdCounts = computeContextualCounts('product', productGroups, pdCtx);
+  const fcCounts = computeContextualCounts('facility', facilityTypes, fcCtx);
+
+  buildFilterButtons('fo-dataset', datasets, activeDatasets, item => datasetColors[item] || 'var(--accent)', dsCounts);
+  buildFilterButtons('fo-status', statuses, activeStatuses, null, stCounts);
+  buildFilterButtons('fo-province', provinces, activeProvinces, null, prCounts);
+  buildFilterButtons('fo-product', productGroups, activeProducts, getColor, pdCounts);
+  buildFilterButtons('fo-facility', facilityTypes, activeFacilities, null, fcCounts);
+}
+
+const datasetColors = { 'Metal Mines': '#E8443A', 'Non-Metal Mines': '#228B22', 'Oil Sands Mines': '#D4A017', 'Coal Mines': '#4a4a4a', 'Critical Minerals (CM)': '#00d4aa', 'CM Advanced Projects': '#58a6ff', 'CM Processing Facilities': '#ffd54f', 'Exploration Projects': '#e040fb', 'Metallurgical Works': '#ff6b9d' };
+// Initial build (will be replaced by cascading update on first applyFilters)
+updateCascadingFilters();
+
+// ─── Filter Logic ───
+let visibleData = []; // track what's currently shown
+
+function applyFilters() {
+  const searchTerm = document.getElementById('search').value.toLowerCase();
+  let visCount = 0;
+  visibleData = [];
+  markersLayer.clearLayers();
+
+  markerMap.forEach(({ marker, data }) => {
+    const dsMatch = activeDatasets.has(data.dataset);
+    const statusMatch = activeStatuses.has(data.status);
+    const provMatch = activeProvinces.has(data.province);
+    const prodMatch = activeProducts.has(data.productGroup);
+    const facTypes = data.facility.toLowerCase();
+    const facMatch = [...activeFacilities].some(f => facTypes.includes(f.toLowerCase()));
+    const searchMatch = !searchTerm ||
+      data.name.toLowerCase().includes(searchTerm) ||
+      data.operator.toLowerCase().includes(searchTerm) ||
+      (data.city && data.city.toLowerCase().includes(searchTerm)) ||
+      data.product.toLowerCase().includes(searchTerm) ||
+      data.province.toLowerCase().includes(searchTerm);
+
+    if (dsMatch && statusMatch && provMatch && prodMatch && facMatch && searchMatch) {
+      markersLayer.addLayer(marker);
+      visibleData.push(data);
+      visCount++;
+    }
+  });
+
+  document.getElementById('vis-count').textContent = visCount;
+  updateCascadingFilters();
+  updateLegend();
+}
+
+document.getElementById('search').addEventListener('input', applyFilters);
+document.getElementById('total-count').textContent = mineData.length;
+
+// ─── Select All / None ───
+function selectAll(group) {
+  if (group === 'dataset') { datasets.forEach(d => activeDatasets.add(d)); }
+  if (group === 'status') { statuses.forEach(s => activeStatuses.add(s)); }
+  if (group === 'province') { provinces.forEach(p => activeProvinces.add(p)); }
+  if (group === 'product') { productGroups.forEach(p => activeProducts.add(p)); }
+  if (group === 'facility') { facilityTypes.forEach(f => activeFacilities.add(f)); }
+  applyFilters();
+}
+function selectNone(group) {
+  if (group === 'dataset') { activeDatasets.clear(); }
+  if (group === 'status') { activeStatuses.clear(); }
+  if (group === 'province') { activeProvinces.clear(); }
+  if (group === 'product') { activeProducts.clear(); }
+  if (group === 'facility') { activeFacilities.clear(); }
+  applyFilters();
+}
+
+function resetFilters() {
+  document.getElementById('search').value = '';
+  selectAll('dataset');
+  selectAll('status');
+  selectAll('province');
+  selectAll('product');
+  selectAll('facility');
+}
+
+// ─── Toggle Groups ───
+function toggleGroup(group) {
+  const title = document.querySelector(`#fg-${group} .filter-group-title`);
+  const opts = document.getElementById(`fo-${group}`);
+  const sc = document.getElementById(`sc-${group}`);
+  title.classList.toggle('collapsed');
+  opts.classList.toggle('collapsed');
+  sc.style.display = sc.style.display === 'none' ? 'flex' : 'none';
+}
+
+// ─── Sidebar Toggle ───
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ─── Dynamic Legend ───
+const legend = L.control({ position: 'bottomright' });
+let legendDiv;
+let legendExpanded = true;
+
+legend.onAdd = function() {
+  legendDiv = L.DomUtil.create('div', 'legend-control expanded');
+  L.DomEvent.disableClickPropagation(legendDiv);
+  L.DomEvent.disableScrollPropagation(legendDiv);
+
+  legendDiv.innerHTML = `
+    <div class="legend-header" onclick="toggleLegend()">
+      <h4>🍁 Legend</h4>
+      <span class="legend-toggle">▼</span>
+    </div>
+    <div class="legend-body" id="legend-body"></div>`;
+  return legendDiv;
+};
+legend.addTo(map);
+
+function toggleLegend() {
+  legendExpanded = !legendExpanded;
+  legendDiv.classList.toggle('expanded', legendExpanded);
+}
+
+function buildLegendItem(label, color, shape) {
+  const cls = shape === 'triangle' ? 'legend-dot triangle'
+    : shape === 'square' ? 'legend-dot square'
+    : shape === 'diamond' ? 'legend-dot diamond'
+    : shape === 'hexagon' ? 'legend-dot hexagon'
+    : shape === 'pentagon' ? 'legend-dot pentagon'
+    : 'legend-dot';
+  const style = shape === 'triangle' ? `border-bottom-color:${color};` : `background:${color};`;
+  return `<div class="legend-item"><span class="${cls}" style="${style}"></span>${label}</div>`;
+}
+
+function updateLegend() {
+  const body = document.getElementById('legend-body');
+  if (!body) return;
+
+  // Collect what's visible
+  const visDatasets = new Set();
+  const visProductGroups = new Set();
+  let hasOnHold = false;
+
+  visibleData.forEach(d => {
+    visDatasets.add(d.dataset);
+    visProductGroups.add(d.productGroup);
+    if (d.status === 'On hold / suspended') hasOnHold = true;
+  });
+
+  let html = '';
+  let hasItems = false;
+
+  // ── Metal Mine product groups (circle markers) ──
+  const metalPGs = [
+    ['Iron ore', '#c9510c'], ['Base metals', '#3fb950'], ['Precious metals', '#f5c542'],
+    ['Uranium', '#58a6ff'], ['Other metals', '#bc8cff'],
+    ['Base metals and precious metals', '#ff7b72', 'Mixed (base+precious)'],
+    ['Precious metals and Base metals', '#ff7b72']
+  ];
+  const shownMetal = [];
+  const seenMetalLabels = new Set();
+  metalPGs.forEach(([pg, color, displayLabel]) => {
+    const lbl = displayLabel || pg;
+    if (visDatasets.has('Metal Mines') && visProductGroups.has(pg) && !seenMetalLabels.has(lbl)) {
+      seenMetalLabels.add(lbl);
+      shownMetal.push(buildLegendItem(lbl, color, 'circle'));
+    }
+  });
+  if (shownMetal.length) {
+    html += `<div class="legend-section-label">Mines</div>` + shownMetal.join('');
+    hasItems = true;
+  }
+
+  // ── Non-Metal Mines (pentagon markers) ──
+  if (visDatasets.has('Non-Metal Mines')) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Non-Metal</div>`;
+    html += buildLegendItem('Industrial Minerals', '#228B22', 'pentagon');
+    hasItems = true;
+  }
+
+  // ── Oil Sands Mines ──
+  if (visDatasets.has('Oil Sands Mines')) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Oil Sands</div>`;
+    html += `<div class="legend-item"><span class="legend-dot square" style="background:#1a1a1a;border:2px solid #D4A017;"></span>Oil Sands Mines</div>`;
+    hasItems = true;
+  }
+
+  // ── Coal Mines ──
+  if (visDatasets.has('Coal Mines')) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Coal</div>`;
+    html += buildLegendItem('Coal Mines', '#4a4a4a', 'circle');
+    hasItems = true;
+  }
+
+  // ── Critical Minerals / Advanced Projects (diamond markers) ──
+  const cmItems = [];
+  if (visDatasets.has('Critical Minerals (CM)')) cmItems.push(buildLegendItem('Critical Minerals (CM)', '#00d4aa', 'diamond'));
+  if (visDatasets.has('CM Advanced Projects')) cmItems.push(buildLegendItem('Advanced Projects', '#58a6ff', 'diamond'));
+  if (cmItems.length) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Critical Minerals</div>` + cmItems.join('');
+    hasItems = true;
+  }
+
+  // ── Exploration Projects (triangle markers) ──
+  if (visDatasets.has('Exploration Projects')) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Exploration</div>`;
+    html += buildLegendItem('Exploration Projects', '#e040fb', 'triangle');
+    hasItems = true;
+  }
+
+  // ── Processing Facilities (hexagon markers) ──
+  if (visDatasets.has('CM Processing Facilities')) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Processing</div>`;
+    html += buildLegendItem('CM Processing Facilities', '#ffd54f', 'hexagon');
+    hasItems = true;
+  }
+
+  // ── Metallurgical Works (square markers) ──
+  const metPGs = [
+    ['Aluminum', '#4fc3f7'], ['Iron and steel', '#ff8a65', 'Iron & Steel'],
+    ['Ferroalloys', '#ce93d8'], ['Base metals', '#3fb950'], ['Precious metals', '#f5c542'],
+    ['Uranium', '#58a6ff']
+  ];
+  const shownMet = [];
+  const seenMetLabels = new Set();
+  metPGs.forEach(([pg, color, displayLabel]) => {
+    const lbl = displayLabel || pg;
+    if (seenMetLabels.has(lbl)) return;
+    // Check if any visible metallurgical works have this product group
+    const hasThis = visibleData.some(d => d.dataset === 'Metallurgical Works' && d.productGroup === pg);
+    if (hasThis) {
+      seenMetLabels.add(lbl);
+      shownMet.push(buildLegendItem(lbl, color, 'square'));
+    }
+  });
+  if (shownMet.length) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += `<div class="legend-section-label">Metallurgical</div>` + shownMet.join('');
+    hasItems = true;
+  }
+
+  // ── On hold / suspended ──
+  if (hasOnHold) {
+    if (hasItems) html += `<div class="legend-separator"></div>`;
+    html += buildLegendItem('On hold / suspended', '#e53935', 'diamond');
+  }
+
+  body.innerHTML = html || '<div class="legend-item" style="opacity:0.5;">No visible layers</div>';
+}
+
+// ─── Initial render ───
+applyFilters();
+</script>
+</body>
+</html>
